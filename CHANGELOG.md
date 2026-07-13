@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.2.1] — 2026-07-13
+
+### Bug fix: `@Tracked` validators no longer bleed across sibling subclasses
+
+`registerPropertyValidator` used `VALIDATORS in proto`, which walks the prototype chain. When a base `TrackedObject` subclass was instantiated first, the `[VALIDATORS]` map was defined as an OWN property of that base's prototype. Any later subclass that registered its own validators then reused the base's map via the chain — and so did its siblings. The end result was that a subclass-only validator (e.g. `SubA.validateFoo`) ended up in the shared map and was invoked on every sibling instance during revalidation, throwing `X is not a function` when the sibling didn't declare that method.
+
+**Fix:** `registerPropertyValidator` now uses `Object.prototype.hasOwnProperty.call(proto, VALIDATORS)` so each subclass prototype gets its OWN map. `validate` and `validateSingleProperty` walk the prototype chain and merge validators from every ancestor's own map (leaf wins for duplicate property names), so base-class validators still fire on subclass instances.
+
+**Impact on consumers:** subclass validator lambdas that were guarded with `typeof self.methodName === 'function'` workarounds can now drop the guard.
+
+---
+
 ## [2.2.0] — 2026-04-07
 
 ### `ITrackerContext` extended — toolbar-ready interface
