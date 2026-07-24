@@ -1,5 +1,101 @@
 # Changelog
 
+## [4.0.0] — 2026-07-24
+
+### Breaking changes and new features in the event layer
+
+v4 restructures the event-generation surface introduced in v3 around two ideas:
+
+1. **A save produces one event per group by default.** With no configuration, all changes on a tracked object collapse into a single event, with owned collections contributing nested payload slots.
+2. **History mode preserves every intermediate operation** for properties or collections that opt in, with a caller-supplied factory when the entry shape is richer than the raw value.
+
+Identity is now decoupled from auto-assignment: `@Id` marks caller-provided identity (any type, composite allowed), while `@AutoId` continues to represent server-assigned numeric ids resolved at commit time. Collections have become aggregate roots over their items — items in an `EventTrackedCollection` no longer emit their own top-level events; they contribute to a set-diff or ordered-ops slot on the owner's payload.
+
+**Breaking:**
+
+- `@EventTracked(eventType, validator?, onChange?, options?)` → `@EventTracked(validator?, onChange?, options?)`. `eventType` has moved into `options.eventType` (optional). Properties with no `eventType` share the implicit default group.
+- `GeneratedEvent.targetId` widened from `number` to `unknown`. Composite/string identities now flow through unchanged; consumers reading `targetId` as `number` must narrow.
+- `EventTrackedCollection` constructor's fourth argument is now `EventTrackedCollectionOptions` (still accepts `itemAdded` / `itemRemoved` for backward compatibility; adds `eventType`, `history`, `owner`). Setting `eventType` or `history` switches the collection into aggregate mode.
+- Item classes used in `EventTrackedCollection` in aggregate mode must declare at least one `@Id` or `@AutoId` — the constructor throws when an item without identity is added.
+
+**New exports:**
+
+| Symbol | Kind | Purpose |
+|---|---|---|
+| `@Id` | decorator | Marks a caller-provided identity property. Any type. Composite keys formed by declaring `@Id` more than once on a class. Trakr never mutates it. |
+| `getIdentity(obj)` | function | Returns the item's identity: scalar for a single identity property, object for composite, `undefined` when none. |
+| `getIdentityObject(obj)` | function | Always returns identity as an object keyed by property names. |
+| `getIdentityProperties(proto)` | function | Returns the ordered list of identity property names for a prototype. |
+| `EventTracker.withContext(ctx, action)` | method | Runs `action` inside a context frame. Any history-mode write inside the frame captures the frame's `ctx` for the `entryFactory`. Frames nest; innermost wins. |
+| `history` (property option) | option | `true` or `{ entryFactory }`. Every operation appends to a per-property chain. On save, serialised as `payload[prop] = [entry, ...]`. Cleared on commit. |
+| `EventTrackedCollectionOptions.eventType` / `.history` / `.owner` | options | Aggregate-mode configuration for `EventTrackedCollection`. |
+
+**Emission model:**
+
+- For each dirty top-level `TrackedObject`, one event per distinct `eventType` present across its dirty scalar properties and owned aggregate collections. Ungrouped items share the empty-string default group.
+- Collections in aggregate mode contribute one slot in the owner's payload keyed by the collection's property name.
+  - Non-history: `{ added, changed, removed }` with sparse per-item diffs and identity inlined in `changed` entries.
+  - History: `{ ops: [...] }` preserving operation order, with either the predefined `{op, item|identity|diff}` shape or `entryFactory` return values.
+- Net-zero cancellation: `A → B → A` on a scalar, or add-then-remove of a new item, emit nothing.
+- Legacy `itemAdded` / `itemRemoved` without `eventType` and without `history`: continue to emit one top-level event per operation, exactly as v3.
+
+**Commit / undo / redo:**
+
+- `onCommit` re-baselines non-history properties and clears history chains and collection ops. `@AutoId` values are patched from `IdAssignment[]` as before.
+- Undo across a commit boundary is treated as a new operation: a new chain entry is appended for history-mode properties, and non-history diffs reflect the reversion.
+
+**Migration:**
+
+```typescript
+// v3
+@EventTracked(IssueEvents.Renamed, undefined, undefined, { coalesceWithin: 300 })
+accessor name: string = '';
+
+// v4
+@EventTracked(undefined, undefined, {
+  eventType: IssueEvents.Renamed,
+  coalesceWithin: 300,
+})
+accessor name: string = '';
+```
+
+Consumers that only used `@EventTracked` for grouped emission and legacy `itemAdded`/`itemRemoved` collections need only the positional-to-options migration above; the emitted event shape is unchanged. Consumers moving to the aggregate model add `owner` on the collection and (optionally) `@Id` on item classes.
+
+---
+
+## [3.0.0] — 2026-07-16
+
+### New: opt-in event generation for event-sourced backends
+
+v3 introduces a fully opt-in layer for consumers moving to event-sourced DDD backends. On Save, instead of shipping a state-diff payload, trakr can produce a **list of typed events** derived declaratively from the tracker's dirty state. No callbacks, no resolvers — the mapping is 100% declarative.
+
+**Why v3 (not v2.3):** the release adds new top-level exports and reserves the right to refine the new API surface. **It is fully backwards compatible.** Consumers using `Tracker`, `TrackedObject`, `TrackedCollection`, `@Tracked`, and `@AutoId` see **zero behavioural change** and need no code changes.
+
+**New exports:**
+
+| Symbol | Kind | Purpose |
+|---|---|---|
+| `EventTracker` | class extending `Tracker` | Adds `generateEvents<TEventType>(): GeneratedEvent<TEventType>[]` |
+| `@EventTracked(eventType, validator?, onChange?, options?)` | decorator | Same semantics as `@Tracked`, plus an event-type tag that groups fields into events |
+| `EventTrackedCollection<T>` | class extending `TrackedCollection<T>` | Adds an optional lifecycle option bag: `{ itemAdded?, itemRemoved? }` |
+| `GeneratedEvent<TEventType, TPayload>` | interface | `{ eventType, payload, trackingId?, targetId? }` |
+| `EventLifecycleOptions<TEventType>` | interface | `{ itemAdded?, itemRemoved? }` |
+
+**Core mechanics:**
+
+- **Field-cluster grouping.** Fields sharing a tag collapse into one event. The payload contains only the dirty fields with that tag.
+- **Only actual differences generate events.** A write followed by a revert (or `undo`) produces no event. Values that never changed since the last commit never appear in a payload.
+- **Insert lifecycle.** An `Insert` item in an `EventTrackedCollection` configured with `itemAdded` emits **one** event with all `@EventTracked` fields on the item. Insert-then-remove collapses to zero events (per v2 state-machine semantics).
+- **Delete lifecycle.** A `Deleted` item in an `EventTrackedCollection` configured with `itemRemoved` emits **one** event with `payload = {}` and `targetId` set from the item's `@AutoId`.
+- **Changed lifecycle.** Field-cluster events with only the dirty fields for each tag, `trackingId` and `targetId` set.
+- **Deterministic ordering.** Objects appear in tracker registration order; within an object, field-cluster events appear in field declaration order. Consumers control semantic ordering (e.g. "field revisions before state transitions") by declaring the transition field last.
+- **`onCommit` clears the event diff.** After a successful commit, `generateEvents()` returns `[]` until the next edit. Undo past a commit repopulates the diff naturally.
+- **Pure read.** `generateEvents()` performs no mutation; calling it twice with no intervening writes returns the same list.
+
+**No v2 behaviour was changed.** The base classes gained no new required knowledge of events. Existing tests are 100% green — v3 adds 48 new tests covering the event-generation surface.
+
+---
+
 ## [2.2.1] — 2026-07-13
 
 ### Bug fix: `@Tracked` validators no longer bleed across sibling subclasses

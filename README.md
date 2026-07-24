@@ -1361,6 +1361,300 @@ For `Deleted` items the PK never changes — the backend just closes the existin
 
 ---
 
+## Event generation (opt-in)
+
+trakr's core is a **state diff** — after edits, iterate `tracker.trackedObjects`, group by `state`, and ship a bulk payload. That model works for most backends, but consumers moving to **event-sourced DDD** need something different: on Save, produce a **list of typed events**, one per meaningful change, that the backend appends to an event stream.
+
+`EventTracker`, `@EventTracked`, and `EventTrackedCollection` provide a **fully opt-in** layer on top of the base API that turns dirty state into a typed event list on demand. Everything else stays identical — consumers using `Tracker` / `TrackedObject` / `TrackedCollection` / `@Tracked` see zero behavioural change.
+
+### API at a glance
+
+```typescript
+import {
+  EventTracker,
+  EventTracked,
+  EventTrackedCollection,
+  TrackedObject,
+  AutoId,
+  Tracker,
+  GeneratedEvent,
+} from '@katn30/trakr';
+
+enum IssueEvents {
+  SubmittedDetailsRevised = 'SubmittedDetailsRevised',
+  AnalysisRevised = 'AnalysisRevised',
+  StageTransitioned = 'StageTransitioned',
+  CommentAdded = 'CommentAdded',
+  CommentRemoved = 'CommentRemoved',
+  CommentEdited = 'CommentEdited',
+  CommentStatusChanged = 'CommentStatusChanged',
+}
+
+class CommentModel extends TrackedObject {
+  @AutoId
+  id: number = 0;
+
+  @EventTracked(IssueEvents.CommentEdited)
+  accessor text: string = '';
+
+  @EventTracked(IssueEvents.CommentStatusChanged)
+  accessor status: string = 'open';
+
+  constructor(t: Tracker) { super(t); }
+}
+
+class IssueModel extends TrackedObject {
+  @AutoId
+  id: number = 0;
+
+  @EventTracked(IssueEvents.SubmittedDetailsRevised)
+  accessor name: string = '';
+
+  @EventTracked(IssueEvents.SubmittedDetailsRevised)
+  accessor description: string = '';
+
+  @EventTracked(IssueEvents.AnalysisRevised)
+  accessor analysisSummary: string | null = null;
+
+  @EventTracked(IssueEvents.AnalysisRevised)
+  accessor rootCause: string | null = null;
+
+  // Declared LAST — see "Ordering" below.
+  @EventTracked(IssueEvents.StageTransitioned)
+  accessor stage: string = 'Submitted';
+
+  readonly comments: EventTrackedCollection<CommentModel>;
+
+  constructor(t: Tracker) {
+    super(t);
+    this.comments = new EventTrackedCollection<CommentModel>(
+      t,
+      [],
+      undefined,
+      {
+        itemAdded: IssueEvents.CommentAdded,
+        itemRemoved: IssueEvents.CommentRemoved,
+      },
+    );
+  }
+}
+
+const tracker = new EventTracker();
+const issue = tracker.construct(() => new IssueModel(tracker));
+tracker.onCommit(); // start clean (issue is loaded)
+
+// user makes some edits
+issue.name = 'Faulty widget';
+issue.stage = 'InAnalysis';
+
+// on Save:
+const events: GeneratedEvent<IssueEvents>[] = tracker.generateEvents<IssueEvents>();
+// events = [
+//   { eventType: 'SubmittedDetailsRevised', payload: { name: 'Faulty widget' }, trackingId: 1, targetId: ... },
+//   { eventType: 'StageTransitioned',       payload: { stage: 'InAnalysis' },    trackingId: 1, targetId: ... },
+// ]
+await api.publishEvents(events);
+tracker.onCommit();
+```
+
+`generateEvents()` is a **pure read** — no mutation, no state transitions. Calling it twice with no intervening writes returns the same list.
+
+### `@EventTracked`
+
+Drop-in replacement for `@Tracked` that adds an **event-type tag** as the first argument. Everything else — validator, `onChange`, `coalesceWithin`, undo/redo, dependency tracking, no-op detection — is identical.
+
+```typescript
+@EventTracked(eventType, validator?, onChange?, options?)
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `eventType` | `string` (typically an enum value) | The tag this field contributes to |
+| `validator` | `(self, newValue) => string \| undefined` | Same as `@Tracked` |
+| `onChange` | `(self, newValue, oldValue) => void` | Same as `@Tracked` |
+| `options.coalesceWithin` | `number` | Same as `@Tracked` |
+
+**Field-cluster grouping.** All fields on a class that share the same tag collapse into **one event**, whose payload contains **only the fields that are currently dirty relative to the last committed state**. Untouched fields are never included. `@Tracked` (untagged) fields continue to work — they participate in undo/redo/validation but do not contribute to event generation.
+
+**Do not name an `@EventTracked` field `state`** — it collides with `TrackedObject.state`, which is the enum used by the state machine. Use a different name (`stage`, `status`, `phase`, `workflowState`…).
+
+### `EventTracker`
+
+Extends `Tracker` with one method:
+
+```typescript
+generateEvents<TEventType extends string = string>(): GeneratedEvent<TEventType>[]
+```
+
+Everything else is unchanged. An `EventTracker` used as a plain `Tracker` (never calling `generateEvents`) behaves **exactly** like a v2 `Tracker`. The one internal difference: `EventTracker.onCommit(keys)` also clears per-instance event-diff state, which is what makes "after commit, `generateEvents` returns `[]`" work.
+
+### `EventTrackedCollection<T>`
+
+Extends `TrackedCollection<T>` with an optional **lifecycle mapping** for item add/remove:
+
+```typescript
+new EventTrackedCollection<CommentModel>(
+  tracker,
+  initialItems,
+  validator,
+  {
+    itemAdded: IssueEvents.CommentAdded,
+    itemRemoved: IssueEvents.CommentRemoved,
+  },
+);
+```
+
+For items that are themselves `TrackedObject`s, the following per-item rules apply at generation time:
+
+| Item state | With `itemAdded` set | With `itemAdded` omitted |
+|---|---|---|
+| `Insert` | One `itemAdded` event, payload = **all** `@EventTracked` fields on the item (regardless of tag) | No event |
+| `Deleted` | One `itemRemoved` event, payload = `{}`, `targetId` = the item's `@AutoId` value | No event |
+| `Changed` | Per-field-cluster events (as if the item were a standalone `Changed` model) | Same — per-field-cluster events |
+| `Unchanged` | No event | No event |
+
+Consumers can opt in to some lifecycle events but not others — the two options are independent. If both are omitted, `EventTrackedCollection` behaves like a plain `TrackedCollection` from the events perspective: only per-field events on `Changed` items are emitted.
+
+**Insert-then-remove collapses to zero events.** If a `TrackedObject` is pushed to a collection and then removed before Save, its state returns to `Unchanged` (see [Object state machine](#object-state-machine) — `removed/do` from `Insert` collapses to `Unchanged`). No `itemAdded` event is emitted for an object that was never really added.
+
+**Collections of primitives** — `EventTrackedCollection<string>`, `EventTrackedCollection<number>`, etc. — accept the lifecycle option bag but do not currently emit lifecycle events, because primitives have no `trackingId` or per-field tags. Track primitive add/remove via `collection.changed` if you need those events.
+
+### `GeneratedEvent`
+
+```typescript
+interface GeneratedEvent<
+  TEventType extends string = string,
+  TPayload = Record<string, unknown>,
+> {
+  eventType: TEventType;
+  payload: TPayload;
+  trackingId?: number;
+  targetId?: number;
+}
+```
+
+| Field | When present | Notes |
+|---|---|---|
+| `eventType` | Always | The tag value from the consumer's enum / string-literal union |
+| `payload` | Always | For lifecycle `itemAdded`: all `@EventTracked` fields' current values. For field-cluster events: only the dirty fields carrying that tag. For lifecycle `itemRemoved`: `{}`. Values of `undefined` are normalised to `null` |
+| `trackingId` | On events emitted from `Insert` or `Changed` items | Correlate with the backend's `IdAssignment[]` response — same mechanism as v2 |
+| `targetId` | On events emitted from `Changed` or `Deleted` items when the model has `@AutoId` | The current `@AutoId` value; the backend uses it to identify the row |
+
+### Semantic rules
+
+1. **Only actual differences produce events.** trakr subscribes to `TrackedObject.changed` and maintains a per-property "original vs. current" diff since the last commit. A write, followed by another write back to the original value (or a `tracker.undo()`), removes the entry — no event is emitted for that field.
+
+2. **Insert emits everything, Changed emits deltas.** For `Insert` items, `itemAdded` sends the full snapshot of `@EventTracked` fields (a new aggregate is "born" with all its state). For `Changed` items, field-cluster events send only fields that actually changed.
+
+3. **`onCommit` resets the baseline.** After `tracker.onCommit()`, every property's "original" is its now-committed value. Subsequent edits are diffed against this new baseline. Undoing past a commit re-populates the diff naturally, because the property undo closures emit `changed` with the reversed old/new values.
+
+4. **`@Tracked` and `@EventTracked` are freely mixable on the same class.** `@Tracked` fields participate in undo/redo/validation as usual; they simply never appear in event payloads.
+
+### Ordering
+
+Event ordering is **deterministic**:
+
+1. **Object order** — objects appear in the events in the order they were registered with the tracker (typically the order they were pushed into their collections).
+2. **Field-cluster event order within one object** — determined by which of that object's `@EventTracked` fields with the same tag was **first declared** in the class body.
+
+Consumers who need semantic ordering — for example, "field revisions before a state transition, so the backend's transition precondition sees the freshly-set field values" — control it by **declaring the transition field last** in the class body. trakr does not need to know which events are "transitions"; declaration order is the entire mechanism.
+
+```typescript
+class IssueModel extends TrackedObject {
+  @EventTracked(IssueEvents.SubmittedDetailsRevised) accessor name: string = '';
+  @EventTracked(IssueEvents.AnalysisRevised)         accessor analysisSummary: string | null = null;
+  // Declared LAST → its event comes after all others.
+  @EventTracked(IssueEvents.StageTransitioned)       accessor stage: string = 'Submitted';
+}
+```
+
+Given `issue.stage = 'InAnalysis'` and `issue.analysisSummary = 'AS'`, `generateEvents()` returns:
+
+```
+[
+  { eventType: 'AnalysisRevised',    payload: { analysisSummary: 'AS' }, ... },
+  { eventType: 'StageTransitioned',  payload: { stage: 'InAnalysis' },   ... },
+]
+```
+
+Subclass `@EventTracked` fields appear **after** base-class fields, matching the declaration order across the prototype chain.
+
+### Scalars vs. sequences: choosing the primitive
+
+`@EventTracked` and `EventTrackedCollection` look interchangeable when both can carry the same field on the wire — a `stage` property could sit on the model as either an accessor or an item in a collection. They are **not** interchangeable: they encode different semantics, and picking the wrong one silently loses information at Save time.
+
+**`@EventTracked` accessor — the field is a *value*.** Multiple writes in one session collapse to **one** event carrying the field's **final** value. That is correct behaviour: consumers care about "what the field is now", not "how many times the user retyped it". Typing `Faulty widget` character by character produces one `SubmittedDetailsRevised{name: 'Faulty widget'}`, not eleven.
+
+**`EventTrackedCollection` — the field is a *sequence of actions*.** Each push emits its own `itemAdded` event, in insertion order. Two pushes produce two events; they never collapse.
+
+The trap: state-machine-style fields *look* like scalars ("current stage"), so it is tempting to model them as `@EventTracked accessor stage`. That is wrong. A transition is not an update to a value — it is a discrete action, and every intermediate state must be persisted for the backend's transition preconditions (`from → to` allowed?) to hold on replay.
+
+```typescript
+// WRONG — accessor collapses "Submitted → InAnalysis → InFixing" into one event
+class IssueModel extends TrackedObject {
+  @EventTracked(IssueEvents.StageTransitioned) accessor stage: string = 'Submitted';
+}
+
+issue.stage = 'InAnalysis';
+issue.stage = 'InFixing';
+
+// generateEvents() returns ONE event with the final value:
+// [{ eventType: 'StageTransitioned', payload: { stage: 'InFixing' } }]
+// Backend replays: Submitted → InFixing, rejects as illegal transition.
+```
+
+```typescript
+// RIGHT — one StageTransitioned event per push, in order
+class StageTransition extends TrackedObject {
+  @EventTracked(IssueEvents.StageTransitioned) accessor stage: string;
+  transitionedAt: string;
+  transitionedBy: string | null;
+
+  constructor(t: Tracker, stage: string, at: string, by: string | null) {
+    super(t);
+    this.stage = stage;
+    this.transitionedAt = at;
+    this.transitionedBy = by;
+  }
+}
+
+class IssueModel extends TrackedObject {
+  stage: string = 'Submitted';                          // plain field, drives UI only
+  readonly transitions: EventTrackedCollection<StageTransition>;
+
+  constructor(t: Tracker) {
+    super(t);
+    this.transitions = new EventTrackedCollection<StageTransition>(
+      t, [], undefined, { itemAdded: IssueEvents.StageTransitioned },
+    );
+  }
+
+  transitionTo(target: string, by: string | null): void {
+    this.stage = target;
+    this.transitions.push(
+      this.tracker.construct(() => new StageTransition(this.tracker, target, new Date().toISOString(), by)),
+    );
+  }
+}
+
+issue.transitionTo('InAnalysis', 'alice');
+issue.transitionTo('InFixing', 'alice');
+
+// generateEvents() returns TWO events, in insertion order:
+// [
+//   { eventType: 'StageTransitioned', payload: { stage: 'InAnalysis' }, ... },
+//   { eventType: 'StageTransitioned', payload: { stage: 'InFixing' },   ... },
+// ]
+```
+
+**Rule of thumb.** If the field's meaning is *"what it is now"* and the backend does not need to see every intermediate write, use `@EventTracked` on an accessor. If each write is a *distinct, ordered action* the backend must apply sequentially — state transitions, audit log entries, phase changes, workflow steps — use `EventTrackedCollection` with an `itemAdded` tag.
+
+### Migration
+
+There is **nothing to migrate** from v2 → v3 for existing code. `Tracker`, `TrackedObject`, `TrackedCollection`, `@Tracked`, and `@AutoId` are unchanged. Opt in per class or per collection whenever the consumer needs event generation. A single tracker instance can mix event-tracked and non-event-tracked objects.
+
+---
+
 ## License
 
 MIT — Nazario Mazzotti

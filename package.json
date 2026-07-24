@@ -1,6 +1,6 @@
 {
   "name": "@katn30/trakr",
-  "version": "2.2.1",
+  "version": "4.0.0",
   "description": "TypeScript state-management library implementing the Unit of Work pattern, with object tracking for undo/redo and validation support.",
   "type": "module",
   "main": "./dist/prod/index.cjs",
