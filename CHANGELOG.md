@@ -1,5 +1,22 @@
 # Changelog
 
+## [4.1.0] — 2026-07-24
+
+### Additions
+
+- **`IdAssignment<V>` is now generic** in the PK value type, defaulting to `number` (fully backward compatible). `Tracker.onCommit<V>(keys?)` is likewise generic, so UUID/ULID/string-keyed schemas can pass `IdAssignment<string>[]` without casts.
+- **`Tracker.getByTrackingId(trackingId)`** — public accessor that returns the tracked object matching a given `trackingId`, or `undefined`. Deleted objects remain findable.
+
+### Documentation
+
+- **`@Id` reference section added.** Clarifies that `@Id` marks caller-provided identity properties (any type, composable) and that `@AutoId` is a specialisation of `@Id` — it participates in identity *and* is the one property patched by `onCommit(keys)`.
+- **Reactivity gate on `@AutoId` write-back made explicit.** The `@AutoId` write performed by `onCommit(keys)` is a baseline update, not a user edit: it does not emit `TrackedObject.changed`, does not bump `dirtyCounter`, does not re-run `@Tracked` validators, and does not flicker `tracker.isDirty`.
+- **`IdAssignment<V>` example** with a string-typed PK.
+
+No breaking changes.
+
+---
+
 ## [4.0.0] — 2026-07-24
 
 ### Breaking changes and new features in the event layer

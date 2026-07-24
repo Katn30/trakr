@@ -1,6 +1,6 @@
-export interface IdAssignment {
+export interface IdAssignment<V = number> {
   trackingId: number;
-  value: number;
+  value: V;
 }
 
 const AUTO_ID = Symbol("autoId");

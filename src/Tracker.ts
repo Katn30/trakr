@@ -315,11 +315,15 @@ export class Tracker implements ITrackerContext {
     return this._trackingIdCounter++;
   }
 
-  public onCommit(keys?: IdAssignment[]): void {
+  public onCommit<V = number>(keys?: IdAssignment<V>[]): void {
     const lastOp = CollectionUtilities.getLast(this._undoOperations);
-    this.trackedObjects.forEach((obj) => obj._onCommitted(lastOp, keys));
+    this.trackedObjects.forEach((obj) => obj._onCommitted(lastOp, keys as IdAssignment<unknown>[] | undefined));
     this._commitStateOperation = lastOp;
     this.reset();
+  }
+
+  public getByTrackingId(trackingId: number): TrackedObject | undefined {
+    return this.trackedObjects.find((o) => o.trackingId === trackingId);
   }
 
   /** @internal */

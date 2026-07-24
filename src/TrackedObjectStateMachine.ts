@@ -8,7 +8,7 @@ export interface StateContext {
   prevState?: State;
   prevDirtyCounter?: number;
   autoIdProp?: string;
-  realId?: number;
+  realId?: unknown;
 }
 
 export interface StateTarget {
@@ -92,10 +92,10 @@ function applyCommitted(obj: StateTarget, direction: StateDirection, context?: S
 export function buildCommittedContext(
   obj: StateTarget & { [key: string]: any },
   autoIdProp: string | undefined,
-  keys: IdAssignment[] | undefined,
+  keys: IdAssignment<unknown>[] | undefined,
 ): StateContext {
   const prevState = obj.state;
-  let realId: number | undefined;
+  let realId: unknown;
   if (
     (prevState === State.Insert || prevState === State.Changed) &&
     keys

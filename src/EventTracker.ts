@@ -34,7 +34,7 @@ export class EventTracker extends Tracker {
     }
   }
 
-  public override onCommit(keys?: IdAssignment[]): void {
+  public override onCommit<V = number>(keys?: IdAssignment<V>[]): void {
     super.onCommit(keys);
     for (const obj of this.trackedObjects) {
       clearEventState(obj);

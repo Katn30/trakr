@@ -564,3 +564,102 @@ describe("TrackedObject state transitions — save operation routing", () => {
     expect(op).toBe("skip");
   });
 });
+
+// ---- Reactivity gate on onCommit write-back ----
+
+describe("TrackedObject – onCommit @AutoId write-back reactivity gate", () => {
+  it("onCommit writing @AutoId does not emit changed events on the object", () => {
+    const tracker = new Tracker();
+    const items = new TrackedCollection<ItemModel>(tracker);
+    const item = tracker.construct(() => new ItemModel(tracker));
+    items.push(item);
+    item.name = "widget";
+
+    const seen: string[] = [];
+    item.changed.subscribe((e) => seen.push(e.property));
+
+    tracker.onCommit([{ trackingId: item.trackingId, value: 42 }]);
+
+    expect(item.id).toBe(42);
+    expect(seen).not.toContain("id");
+  });
+
+  it("onCommit writing @AutoId does not flicker isDirty back to true", () => {
+    const tracker = new Tracker();
+    const items = new TrackedCollection<ItemModel>(tracker);
+    const item = tracker.construct(() => new ItemModel(tracker));
+    items.push(item);
+    item.name = "widget";
+
+    const dirtyLog: boolean[] = [];
+    tracker.isDirtyChanged.subscribe((v) => dirtyLog.push(v));
+
+    tracker.onCommit([{ trackingId: item.trackingId, value: 42 }]);
+
+    expect(tracker.isDirty).toBe(false);
+    // last observed value must be false — never a spurious true after commit
+    expect(dirtyLog[dirtyLog.length - 1]).toBe(false);
+  });
+});
+
+// ---- getByTrackingId ----
+
+describe("Tracker – getByTrackingId", () => {
+  it("returns the tracked object matching the given trackingId", () => {
+    const tracker = new Tracker();
+    const a = tracker.construct(() => new ItemModel(tracker));
+    const b = tracker.construct(() => new ItemModel(tracker));
+
+    expect(tracker.getByTrackingId(a.trackingId)).toBe(a);
+    expect(tracker.getByTrackingId(b.trackingId)).toBe(b);
+  });
+
+  it("returns undefined for an unknown trackingId", () => {
+    const tracker = new Tracker();
+    tracker.construct(() => new ItemModel(tracker));
+
+    expect(tracker.getByTrackingId(999)).toBeUndefined();
+  });
+
+  it("still finds Deleted items", () => {
+    const tracker = new Tracker();
+    const item = loadedItem(tracker, 7);
+    const coll = new TrackedCollection<ItemModel>(tracker, [item]);
+    coll.remove(item);
+
+    expect(tracker.getByTrackingId(item.trackingId)).toBe(item);
+    expect(item.state).toBe(State.Deleted);
+  });
+});
+
+// ---- IdAssignment<V> — non-number PK types ----
+
+class StringPkModel extends TrackedObject {
+  @AutoId
+  id: string = "";
+
+  @Tracked()
+  accessor name: string = "";
+
+  constructor(tracker: Tracker) {
+    super(tracker);
+  }
+}
+
+describe("IdAssignment<V> – string-typed @AutoId", () => {
+  it("onCommit writes a string value to a string-typed @AutoId", () => {
+    const tracker = new Tracker();
+    const items = new TrackedCollection<StringPkModel>(tracker);
+    const item = tracker.construct(() => new StringPkModel(tracker));
+    items.push(item);
+    item.name = "widget";
+
+    tracker.onCommit<string>([
+      { trackingId: item.trackingId, value: "01HXYZ-ULID" },
+    ]);
+
+    expect(item.id).toBe("01HXYZ-ULID");
+    expect(item.state).toBe(State.Unchanged);
+    expect(tracker.isDirty).toBe(false);
+  });
+});

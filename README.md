@@ -610,6 +610,14 @@ tracker.onCommit(keys);       // same, plus write real server IDs to @AutoId fie
 2. Transitions every tracked object's `state` to `Unchanged` and resets `dirtyCounter`.
 3. Appends the state change into the existing last undo operation — so undo atomically reverts both the user's edits and the committed state together (no spurious extra undo steps).
 
+**Lookup by trackingId**
+
+```typescript
+const obj = tracker.getByTrackingId(42);   // TrackedObject | undefined
+```
+
+Returns the tracked object whose `trackingId` matches the given value, or `undefined` if none. Deleted objects are still findable this way (they remain in `trackedObjects` until `destroy()`). Useful for debugging, correlating server responses against known objects, or hydrating a UI selection from a persisted `trackingId`.
+
 **Sessions**
 
 ```typescript
@@ -886,6 +894,8 @@ tracker.onCommit(response.ids);
 
 Marks a property as the server-assigned autoincrement primary key for this model. Only one `@AutoId` field is allowed per class. Enables the `onCommit` lifecycle for real-ID assignment.
 
+`@AutoId` is a **specialisation of `@Id`**: it also registers the property as part of the model's identity (so `getIdentity(obj)` includes it), but it additionally singles the property out as the one trakr will overwrite from `onCommit(keys)`. Use `@Id` for identity properties you assign yourself; use `@AutoId` for the single property trakr should patch on commit. See [`@Id`](#id) for identity-only properties (composite keys, caller-assigned UUIDs, natural keys).
+
 ```typescript
 class InvoiceModel extends TrackedObject {
   @AutoId
@@ -927,6 +937,45 @@ tracker.onCommit(serverIds);
 
 `trackingId` values are globally unique across the lifetime of the tracker and never reused, so they can safely serve as correlation keys across multiple save cycles.
 
+**Reactivity gate.** The `@AutoId` write performed by `onCommit(keys)` is a **library-internal write, not a user edit**. It does **not** fire `TrackedObject.changed` for the `@AutoId` property, does **not** bump `dirtyCounter`, does **not** re-run `@Tracked` validators, and does **not** flicker `tracker.isDirty` back to `true` during commit. After `onCommit` returns, `state === Unchanged` and `isDirty === false` — as if the object were freshly loaded with the real PK. Treat the write as *authoritative baseline update*, not as a change event.
+
+---
+
+### `@Id`
+
+Marks a property as part of the model's **caller-provided identity**. Any type is allowed (string, number, UUID, ULID, tuple-like composite via multiple decorators). Trakr never mutates the value — you set it (typically from the server, or client-generated for UUID schemas), and trakr uses it purely to compute `getIdentity(obj)`, `getIdentityObject(obj)`, and `getIdentityProperties(proto)`.
+
+```typescript
+class TenantModel extends TrackedObject {
+  @Id
+  code: string = '';        // caller-assigned string PK
+
+  @Tracked()
+  accessor name: string = '';
+}
+
+class LineItemModel extends TrackedObject {
+  @Id
+  orderId: number = 0;      // composite key part 1
+  @Id
+  lineNo: number = 0;       // composite key part 2
+
+  @Tracked()
+  accessor qty: number = 0;
+}
+```
+
+**Relationship to `@AutoId`.**
+
+|                                  | `@Id`                             | `@AutoId`                                       |
+|----------------------------------|-----------------------------------|-------------------------------------------------|
+| Registers property as identity   | yes                               | yes (implicitly)                                |
+| Value type                       | any                               | any (via `IdAssignment<V>`; historically `number`) |
+| Written by `onCommit(keys)`      | never                             | yes, from the matching `IdAssignment.value`     |
+| Multiple per class               | yes (composite key)               | no (at most one)                                |
+
+Use `@Id` for identity you own (client-generated UUIDs, natural keys, composite keys). Use `@AutoId` for the single property whose value only the server can produce and that must be patched back into the model after `onCommit`. A class may combine them: several `@Id` properties for a composite key plus one `@AutoId` for a surrogate PK, if that matches your schema.
+
 ---
 
 ### `ITracked`
@@ -951,19 +1000,24 @@ function isReady(item: ITracked): boolean {
 
 ---
 
-### `IdAssignment`
+### `IdAssignment<V>`
 
-The shape of each entry in the `keys` array passed to `tracker.onCommit(keys)`:
+The shape of each entry in the `keys` array passed to `tracker.onCommit(keys)`. Generic in the PK value type, defaulting to `number`:
 
 ```typescript
 import type { IdAssignment } from '@katn30/trakr';
-// { trackingId: number; value: number }
+// IdAssignment<V = number> = { trackingId: number; value: V }
+
+const numericKeys: IdAssignment[]           = [{ trackingId: 1, value: 42 }];
+const uuidKeys:    IdAssignment<string>[]   = [{ trackingId: 1, value: '01HXYZ-ULID' }];
 ```
 
 | Field | Type | Description |
 |---|---|---|
 | `trackingId` | `number` | The `trackingId` of the object that received a new server-assigned PK |
-| `value` | `number` | The real server-assigned ID to write to the `@AutoId` field |
+| `value` | `V` (default `number`) | The real server-assigned ID to write to the `@AutoId` field |
+
+`tracker.onCommit<V>(keys)` is generic in `V`: pass `IdAssignment<string>[]` for UUID/ULID schemas, `IdAssignment[]` for the numeric default. Trakr writes `entry.value` straight into the `@AutoId` field — the field's declared type is what enforces the match at the call site (e.g. `@AutoId id: string = ''` with `onCommit<string>(...)`).
 
 The server returns one `IdAssignment` per item that produced a new database row — both inserted objects and, in temporal tables, updated objects (see [Temporally versioned tables](#temporally-versioned-tables)). `onCommit()` iterates every entry, matches by `trackingId` against every tracked object, and writes `value` to the `@AutoId` field of any match.
 

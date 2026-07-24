@@ -93,7 +93,7 @@ export abstract class TrackedObject implements ITracked, StateTarget {
   }
 
   /** @internal */
-  public _onCommitted(lastOp?: Operation, keys?: IdAssignment[]): void {
+  public _onCommitted(lastOp?: Operation, keys?: IdAssignment<unknown>[]): void {
     const autoIdProp = getAutoIdProperty(Object.getPrototypeOf(this));
     const context = buildCommittedContext(this, autoIdProp, keys);
 
