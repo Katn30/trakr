@@ -672,6 +672,7 @@ describe("TrackedCollection — TrackedObject items get correct state on splice"
     col.remove(item);
 
     expect(item.state).toBe(State.Unchanged);
+    expect(tracker.trackedObjects).not.toContain(item);
   });
 
   it("committed (Unchanged) item spliced out of a collection is marked Deleted", () => {
@@ -706,5 +707,63 @@ describe("TrackedCollection — TrackedObject items get correct state on splice"
     tracker.undo();
 
     expect(item.state).toBe(State.Unchanged);
+  });
+});
+
+// ---- Insert collapse — untracking and validity accounting ----
+
+class RequiredNameItem extends TrackedObject {
+  @Tracked((_, v: string) => v.length > 0 ? undefined : "name required")
+  accessor name: string = "";
+  constructor(tracker: Tracker) { super(tracker); }
+}
+
+describe("TrackedCollection — Insert-remove untracks the item", () => {
+  let tracker: Tracker;
+
+  beforeEach(() => {
+    tracker = new Tracker();
+  });
+
+  it("invalid Insert item removed from collection restores tracker.isValid", () => {
+    const col = new TrackedCollection<RequiredNameItem>(tracker);
+    const item = tracker.construct(() => new RequiredNameItem(tracker));
+    col.push(item);
+
+    expect(item.isValid).toBe(false);
+    expect(tracker.isValid).toBe(false);
+
+    col.remove(item);
+
+    expect(tracker.trackedObjects).not.toContain(item);
+    expect(tracker.isValid).toBe(true);
+  });
+
+  it("undo of an invalid Insert-remove re-tracks and re-invalidates", () => {
+    const col = new TrackedCollection<RequiredNameItem>(tracker);
+    const item = tracker.construct(() => new RequiredNameItem(tracker));
+    col.push(item);
+    col.remove(item);
+    expect(tracker.isValid).toBe(true);
+
+    tracker.undo();
+
+    expect(tracker.trackedObjects).toContain(item);
+    expect(item.state).toBe(State.Insert);
+    expect(tracker.isValid).toBe(false);
+  });
+
+  it("consumer does not need to call destroy() after remove for Insert items", () => {
+    const col = new TrackedCollection<RequiredNameItem>(tracker);
+    const item = tracker.construct(() => new RequiredNameItem(tracker));
+    col.push(item);
+    col.remove(item);
+    // No destroy() call — the library handles it.
+    const another = tracker.construct(() => new RequiredNameItem(tracker));
+    another.name = "ok";
+    col.push(another);
+
+    expect(tracker.isValid).toBe(true);
+    expect(tracker.trackedObjects).toEqual([another]);
   });
 });

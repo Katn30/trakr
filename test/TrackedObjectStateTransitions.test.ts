@@ -413,6 +413,34 @@ describe("TrackedObject state transitions — Insert collapsed by remove", () =>
     items.remove(item);
 
     expect(item.state).toBe(State.Unchanged);
+    expect(tracker.trackedObjects).not.toContain(item);
+  });
+
+  it("push → remove → undo → item is re-tracked and back in the collection as Insert", () => {
+    const tracker = new Tracker();
+    const items = new TrackedCollection<ItemModel>(tracker);
+    const item = tracker.construct(() => new ItemModel(tracker));
+    items.push(item);
+    items.remove(item);
+    tracker.undo();
+
+    expect(item.state).toBe(State.Insert);
+    expect(tracker.trackedObjects).toContain(item);
+    expect(items.collection).toContain(item);
+  });
+
+  it("push → remove → undo → redo → item is untracked again", () => {
+    const tracker = new Tracker();
+    const items = new TrackedCollection<ItemModel>(tracker);
+    const item = tracker.construct(() => new ItemModel(tracker));
+    items.push(item);
+    items.remove(item);
+    tracker.undo();
+    tracker.redo();
+
+    expect(item.state).toBe(State.Unchanged);
+    expect(tracker.trackedObjects).not.toContain(item);
+    expect(items.collection).not.toContain(item);
   });
 });
 

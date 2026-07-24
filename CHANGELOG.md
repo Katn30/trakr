@@ -1,5 +1,42 @@
 # Changelog
 
+## [4.2.0] — 2026-07-25
+
+### Fix: `TrackedCollection.remove` on `Insert` items now auto-untracks
+
+Previously, removing a `TrackedObject` whose state was `Insert` transitioned it to `Unchanged` but left it in `tracker.trackedObjects` with its validation state intact. The object was logically removed from any collection but still contributed to `tracker.isValid` — an invalid Insert item removed from a collection kept `tracker.isValid === false` indefinitely, and `trackedObjects[]` grew unbounded across insert-remove churn.
+
+`removed/do` from `Insert` now additionally calls `_untrackObject` on the item and clears its `DependencyTracker` entries, in the same undo step as the state transition. Consumers no longer need to pair `collection.remove(item)` with a manual `item.destroy()` when the item was newly inserted:
+
+```typescript
+// Before — consumers had to know Insert state was special
+const handleDelete = (c: CommentDraft) => {
+  const wasNew = c.id === null;
+  comments.remove(c);
+  if (wasNew) c.destroy();
+};
+
+// After — the collection handles it
+const handleDelete = (c: CommentDraft) => {
+  comments.remove(c);
+};
+```
+
+Undo of the remove re-tracks the item and restores its previous validity accounting; redo untracks again. `Deleted` state semantics for previously-committed items are unchanged.
+
+### Known sharp edge
+
+Calling `destroy()` on a `TrackedObject` that is already untracked corrupts `tracker.trackedObjects`. `_untrackObject` does `trackedObjects.splice(indexOf(obj), 1)`; when `indexOf` returns `-1`, `splice(-1, 1)` deletes the **last** element of the array — an unrelated object. This has always been true, but the auto-untrack above makes it easier to hit: any consumer still following the old pattern `collection.remove(item); if (wasNew) item.destroy();` will now double-untrack Insert items and silently drop a bystander from the tracker. Migrate to the pattern shown above.
+
+### Documentation
+
+- **`TrackedCollection<T>` positional access at runtime.** New subsection in the API reference. `TrackedCollection<T>` implements `Array<T>` for type-level interop, but numeric-index access is not wired up at runtime — `col[0]` returns `undefined` even when `col.length > 0`, and `col[0] = x` silently sets a phantom property that shadows the (unimplemented) indexer without mutating the collection or triggering tracking. Documents why the runtime backing is deliberately not provided (neither `Proxy` nor per-index `defineProperty` is worth its trade-offs) and lists the tracked alternatives: `col.at(n)`, `col.collection[n]`, `col.replaceAt(n, x)`, `col.splice(n, 1, x)`, and standard iteration.
+- **Insert/Delete lifecycle updated.** The lifecycle example and the "Full transition table" key notes now spell out that `removed/do` from `Insert` untracks the object.
+
+No breaking changes to any documented API.
+
+---
+
 ## [4.1.0] — 2026-07-24
 
 ### Additions

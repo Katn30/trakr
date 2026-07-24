@@ -463,12 +463,14 @@ Adding or removing a `TrackedObject` from a `TrackedCollection` transitions its 
 ```typescript
 const item = tracker.construct(() => new ItemModel(tracker)); // Unchanged
 items.push(item);   // → Insert
-items.remove(item); // → Unchanged (was never saved)
+items.remove(item); // → Unchanged, and untracked (was never saved)
 
 const loaded = tracker.construct(() => new ItemModel(tracker, { id: 1 })); // Unchanged
 items.push(loaded);   // → Insert
 items.remove(loaded); // → Deleted
 ```
+
+Removing an item whose state is `Insert` collapses it as if it had never existed: the state resets to `Unchanged` and the object is removed from `tracker.trackedObjects` in the same undo step. You do not need to call `destroy()` yourself — the collection handles it. Undo of the remove re-tracks the item and puts it back in the collection at state `Insert`.
 
 **Via @Tracked property**
 
@@ -536,7 +538,7 @@ There is no separate redo transition. Redo simply re-runs the original `do` acti
 
 #### Key notes
 
-**`removed/do` from `Insert` collapses to `Unchanged`** — if an object was added and then removed before ever being committed, it was never persisted. The transition resets `dirtyCounter` to zero as if the add never happened. Nothing needs to be sent to the server.
+**`removed/do` from `Insert` collapses to `Unchanged` and untracks the object** — if an object was added and then removed before ever being committed, it was never persisted. The transition resets `dirtyCounter` to zero, removes the object from `tracker.trackedObjects`, and clears its dependency-tracking entries — as if the add never happened. Nothing needs to be sent to the server, and the object no longer contributes to `tracker.isValid`. Undo of the remove re-tracks the object and restores its previous validity accounting.
 
 **`committed/undo` reverses the server operation** — undoing past a commit puts the object into the state that requires the inverse server operation. Undoing a committed INSERT requires a DELETE; undoing a committed DELETE requires a new INSERT; undoing a committed UPDATE requires another UPDATE with the pre-edit values.
 
@@ -1190,7 +1192,7 @@ accessor status: string = '';
 
 ### `TrackedCollection<T>`
 
-A fully array-compatible tracked collection. All mutations are recorded and undoable. Implements `Array<T>` so it works anywhere an array is expected.
+A tracked collection with a full array-shaped API. All mutation methods are recorded and undoable. Implements `Array<T>` for type-level interop with array-consuming APIs — with one runtime gap, described in **Positional access at runtime** below.
 
 ```typescript
 const items = new TrackedCollection<string>(tracker);
@@ -1205,6 +1207,28 @@ const items = new TrackedCollection<string>(
   (list) => list.length === 0 ? 'At least one item is required' : undefined,
 );
 ```
+
+**Positional access at runtime**
+
+`TrackedCollection<T>` declares the `[n: number]: T` index signature (inherited from `implements Array<T>`), but numeric-index access is **not** wired up at runtime. TypeScript accepts `col[n]` and `col[n] = x` without complaint, but neither behaves like a real array:
+
+- `col[0]` returns `undefined` at runtime, even when `col.length > 0`.
+- `col[0] = x` does not mutate the collection and does not trigger tracking. It silently sets a data property on the class instance that shadows the (unimplemented) indexer — subsequent `col[0]` reads will return `x` while `col.length`, iteration, and `col.collection` still reflect the real state. This divergence will not surface as an error; it will surface as inconsistent UI or a save payload missing the write.
+
+The interface is kept for interop (passing a `TrackedCollection` to code typed against `Array<T>`), but the runtime backing is deliberately not provided: wiring it up requires either a `Proxy` (breaks instance identity across the tracker API and adds an indirection layer on every property access) or per-index `defineProperty` accessors (allocates one closure per element, and numeric properties become enumerable and appear in `Object.keys` and `for...in`). Neither trade-off is worth it for a pattern the class already has first-class alternatives for.
+
+Use these instead:
+
+| Instead of | Use |
+|---|---|
+| `col[n]` (read) | `col.at(n)` — participates in dependency tracking |
+| — | `col.collection[n]` — direct read of the underlying array, no dependency tracking |
+| `col[n] = x` (write) | `col.replaceAt(n, x)` — tracked, undoable |
+| — | `col.splice(n, 1, x)` — tracked, undoable |
+| `for (let i = 0; i < col.length; i++) col[i]` | `for (const item of col) ...` |
+| — | `col.forEach(...)`, `col.map(...)`, etc. |
+
+When passing a `TrackedCollection` to a third-party function typed against `Array<T>` that reads by index internally, pass `col.collection` instead. It exposes the underlying `T[]` with zero copying. Treat it as read-only: any mutation applied to that reference bypasses the tracker entirely.
 
 **Tracked mutation methods**
 

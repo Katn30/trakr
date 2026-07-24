@@ -110,10 +110,24 @@ export abstract class TrackedObject implements ITracked, StateTarget {
   public _markRemoved(): void {
     const prevState = this._state;
     const prevDirtyCounter = this._dirtyCounter;
+    const wasValid = this._isValid;
+    const collapseInsert = prevState === State.Insert;
 
     this.tracker._doAndTrack(
-      () => applyStateTransition(this, 'removed', 'do'),
-      () => applyStateTransition(this, 'removed', 'undo', { prevState, prevDirtyCounter }),
+      () => {
+        applyStateTransition(this, 'removed', 'do');
+        if (collapseInsert) {
+          DependencyTracker.clearDeps(this);
+          this.tracker._untrackObject(this);
+        }
+      },
+      () => {
+        if (collapseInsert) {
+          this.tracker._trackObject(this);
+          if (!wasValid) this.tracker._onValidityChanged(true, false);
+        }
+        applyStateTransition(this, 'removed', 'undo', { prevState, prevDirtyCounter });
+      },
       new OperationProperties(this, '__state__', PropertyType.Object),
     );
   }
