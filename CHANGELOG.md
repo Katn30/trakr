@@ -1,6 +1,6 @@
 # Changelog
 
-## [4.3.0] — 2026-07-27
+## [4.3.1] — 2026-07-27
 
 ### New: `tracker.new()` — construction with tracked defaults
 
