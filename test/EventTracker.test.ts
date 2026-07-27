@@ -833,3 +833,70 @@ describe("@EventTracked construction respects tracker.construct()", () => {
     expect(tracker.isDirty).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------- tracker.new()
+
+describe("tracker.new()", () => {
+  class Issue extends TrackedObject {
+    @Id id: string = "id";
+    @EventTracked(undefined, undefined, { eventType: "X" }) accessor status: string = "";
+    @EventTracked(undefined, undefined, { eventType: "X" }) accessor priority: number = 0;
+    constructor(t: Tracker, data?: { status: string; priority: number }) {
+      super(t);
+      if (data) {
+        this.status = data.status;
+        this.priority = data.priority;
+      } else {
+        this.status = "open";
+        this.priority = 1;
+      }
+    }
+  }
+
+  it("defaults set in constructor appear in generateEvents()", () => {
+    const tracker = newEventTracker();
+    tracker.new(() => new Issue(tracker));
+    const events = tracker.generateEvents();
+    expect(events).toHaveLength(1);
+    expect(events[0].eventType).toBe("X");
+    expect(events[0].payload).toEqual({ status: "open", priority: 1 });
+  });
+
+  it("tracker is dirty after tracker.new()", () => {
+    const tracker = newEventTracker();
+    tracker.new(() => new Issue(tracker));
+    expect(tracker.isDirty).toBe(true);
+  });
+
+  it("same constructor: tracker.construct() with data produces no events", () => {
+    const tracker = newEventTracker();
+    tracker.construct(() => new Issue(tracker, { status: "closed", priority: 3 }));
+    expect(tracker.generateEvents()).toEqual([]);
+    expect(tracker.isDirty).toBe(false);
+  });
+
+  it("after onCommit(), generateEvents() returns []", () => {
+    const tracker = newEventTracker();
+    tracker.new(() => new Issue(tracker));
+    tracker.onCommit();
+    expect(tracker.generateEvents()).toEqual([]);
+  });
+
+  it("post-construction mutations on a new() object are included in the event", () => {
+    const tracker = newEventTracker();
+    const issue = tracker.new(() => new Issue(tracker));
+    issue.status = "in-progress";
+    const events = tracker.generateEvents();
+    expect(events).toHaveLength(1);
+    expect(events[0].payload).toEqual({ status: "in-progress", priority: 1 });
+  });
+
+  it("reverting a default back to empty string produces no entry for that property", () => {
+    const tracker = newEventTracker();
+    const issue = tracker.new(() => new Issue(tracker));
+    issue.status = "";
+    const events = tracker.generateEvents();
+    expect(events).toHaveLength(1);
+    expect(events[0].payload).toEqual({ priority: 1 });
+  });
+});

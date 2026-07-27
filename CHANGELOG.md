@@ -1,5 +1,48 @@
 # Changelog
 
+## [4.3.0] — 2026-07-27
+
+### New: `tracker.new()` — construction with tracked defaults
+
+Adds `Tracker.new<T>(action: () => T): T`, a companion to `tracker.construct()` for creating brand-new objects whose constructor-set defaults should appear in `generateEvents()`.
+
+**The problem.** Object constructors typically handle two cases: loading saved data from the server, and creating a new object with sensible defaults. Both cases write to properties inside the constructor. `tracker.construct()` suppresses all of those writes, which is correct for the loaded case but wrong for the new-object case — the defaults silently become the baseline and never appear in events.
+
+**The solution.** `tracker.new()` is identical to `tracker.construct()` except it does not suppress tracking. Writes made inside the constructor callback are recorded as real changes. The tracker is dirty immediately after `tracker.new()` returns, and the defaults appear in `generateEvents()` on the next save.
+
+```typescript
+class InvoiceModel extends TrackedObject {
+  @EventTracked(undefined, undefined, { eventType: 'InvoiceCreated' })
+  accessor status: string = '';
+
+  constructor(tracker: Tracker, data?: { status: string }) {
+    super(tracker);
+    if (data) {
+      this.status = data.status; // suppressed when called via tracker.construct()
+    } else {
+      this.status = 'draft';     // tracked when called via tracker.new()
+    }
+  }
+}
+
+// Loading from DB — no event, tracker stays clean
+const saved = tracker.construct(() => new InvoiceModel(tracker, { status: 'sent' }));
+
+// User creates new — 'draft' appears in generateEvents()
+const fresh = tracker.new(() => new InvoiceModel(tracker));
+tracker.generateEvents();
+// [{ eventType: 'InvoiceCreated', payload: { status: 'draft' }, trackingId: 2 }]
+```
+
+Both methods:
+- Require `_isConstructing` to be true (the dev-mode construction guard still protects against bare `new MyModel(tracker)`)
+- Validate every newly constructed object once after the callback completes
+- Call `tracker.revalidate()` exactly once at the end
+
+No breaking changes. Existing `tracker.construct()` calls are unaffected.
+
+---
+
 ## [4.2.0] — 2026-07-25
 
 ### Fix: `TrackedCollection.remove` on `Insert` items now auto-untracks

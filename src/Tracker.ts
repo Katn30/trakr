@@ -180,6 +180,18 @@ export class Tracker implements ITrackerContext {
     return result;
   }
 
+  public new<T>(action: () => T): T {
+    const objectsBefore = this.trackedObjects.length;
+    this._constructionDepth++;
+    const result = action();
+    for (let i = objectsBefore; i < this.trackedObjects.length; i++) {
+      validate(this.trackedObjects[i]);
+    }
+    this._constructionDepth--;
+    this.isValid = this._invalidCount === 0;
+    return result;
+  }
+
   public withTrackingSuppressed(action: () => void): void {
     this._suppressTrackingCounter++;
     action();

@@ -366,7 +366,7 @@ trakr runs validators automatically — you never call them directly. They run:
 
 - After every tracked write to the decorated property
 - After every undo and redo
-- Once for every property on every model after `tracker.construct()` completes
+- Once for every property on every model after `tracker.construct()` or `tracker.new()` completes
 
 Results are stored per-property in `model.validationMessages: Map<string, string>` and aggregated into:
 
@@ -390,15 +390,13 @@ items.push('a');
 items.isValid; // true
 ```
 
-### Construction via tracker.construct()
+### Object construction
 
-All tracked model objects must be created inside `tracker.construct()`. This call:
+Tracked objects must always be created with one of two construction methods. Using bare `new MyModel(tracker)` outside either method throws in development mode.
 
-- Suppresses tracking for the entire constructor body — property writes during construction are silently applied without creating undo entries
-- Validates every object once after construction
-- Calls `tracker.revalidate()` exactly once at the end, keeping bulk creation O(n)
+**`tracker.construct()` — loading existing objects**
 
-The tracker is clean and `canUndo` is `false` immediately after `tracker.construct()` returns.
+Suppresses tracking for the entire constructor body — property writes during construction are silently applied without creating undo entries. The tracker is clean (`canUndo === false`) immediately after it returns.
 
 ```typescript
 // Single object — returns the constructed instance
@@ -407,11 +405,44 @@ const invoice = tracker.construct(() => new InvoiceModel(tracker));
 // Multiple objects — pass them all in one callback
 tracker.construct(() => {
   for (const row of serverRows) {
-    const item = new ItemModel(tracker);
-    item.name = row.name; // suppressed — not tracked
+    const item = new ItemModel(tracker, row);
   }
 });
 // tracker.revalidate() is called once here — not once per object
+```
+
+**`tracker.new()` — creating new objects**
+
+Does **not** suppress tracking — defaults set in the constructor are recorded as real changes. The tracker is dirty immediately after it returns, and those defaults appear in `EventTracker.generateEvents()` on the next save.
+
+```typescript
+const invoice = tracker.new(() => new InvoiceModel(tracker));
+// tracker.isDirty === true
+// defaults appear in generateEvents()
+```
+
+Both methods validate every constructed object once and run `tracker.revalidate()` exactly once at the end. The same constructor can serve both roles by branching on whether saved data was provided:
+
+```typescript
+class InvoiceModel extends TrackedObject {
+  @EventTracked(undefined, undefined, { eventType: 'InvoiceCreated' })
+  accessor status: string = '';
+
+  constructor(tracker: Tracker, data?: { status: string }) {
+    super(tracker);
+    if (data) {
+      this.status = data.status; // suppressed when called via tracker.construct()
+    } else {
+      this.status = 'draft';     // tracked when called via tracker.new()
+    }
+  }
+}
+
+// Loading from DB — defaults suppressed, tracker stays clean
+const saved = tracker.construct(() => new InvoiceModel(tracker, { status: 'sent' }));
+
+// User creates new — defaults tracked, appear in generateEvents()
+const fresh = tracker.new(() => new InvoiceModel(tracker));
 ```
 
 ### Development vs production builds
@@ -645,17 +676,20 @@ session.versionChanged;    // same event as tracker.versionChanged
 **Object construction**
 
 ```typescript
-// Single object — returns the constructed instance
-const model = tracker.construct(() => new MyModel(tracker));
+// Load existing data — tracking suppressed, tracker stays clean
+const model = tracker.construct(() => new MyModel(tracker, savedData));
 
-// Multiple objects — returns void
+// Multiple objects at once
 tracker.construct(() => {
-  new ModelA(tracker);
-  new ModelB(tracker);
+  new ModelA(tracker, rowA);
+  new ModelB(tracker, rowB);
 });
+
+// Create a new object — tracking active, defaults appear in generateEvents()
+const fresh = tracker.new(() => new MyModel(tracker));
 ```
 
-`tracker.construct()` suppresses tracking for the entire callback, runs validators once after all objects are created, and calls `tracker.revalidate()` exactly once at the end.
+`tracker.construct()` suppresses tracking for the entire callback. `tracker.new()` does not — constructor-set defaults are recorded as real changes and the tracker is dirty on return. Both run validators once after all objects are created and call `tracker.revalidate()` exactly once at the end.
 
 **Tracking suppression**
 
@@ -1627,6 +1661,8 @@ interface GeneratedEvent<
 3. **`onCommit` resets the baseline.** After `tracker.onCommit()`, every property's "original" is its now-committed value. Subsequent edits are diffed against this new baseline. Undoing past a commit re-populates the diff naturally, because the property undo closures emit `changed` with the reversed old/new values.
 
 4. **`@Tracked` and `@EventTracked` are freely mixable on the same class.** `@Tracked` fields participate in undo/redo/validation as usual; they simply never appear in event payloads.
+
+5. **`tracker.new()` surfaces constructor defaults in the first event.** Use `tracker.new()` (instead of `tracker.construct()`) when the user creates a new object. Defaults set in the constructor are tracked and appear in `generateEvents()` until `onCommit()` resets the baseline. Use `tracker.construct()` for loading saved data — those writes are suppressed and produce no events.
 
 ### Ordering
 
