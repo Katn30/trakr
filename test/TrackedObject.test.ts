@@ -498,6 +498,32 @@ describe("TrackedObject – construct()", () => {
     expect(model.validationMessages.get("name")).toBe("Name is required");
     expect(tracker.isValid).toBe(false);
   });
+
+  it("undo push of invalid constructed item removes ghost and restores tracker.isValid", () => {
+    const tracker = new Tracker();
+    const items = new TrackedCollection<RequiredNameModel>(tracker);
+    const item = tracker.construct(() => new RequiredNameModel(tracker));
+    expect(tracker.isValid).toBe(false); // invalid before push (name is empty)
+
+    items.push(item);
+    tracker.undo();
+
+    expect(tracker.trackedObjects).not.toContain(item);
+    expect(tracker.isValid).toBe(true);
+  });
+
+  it("redo push of invalid item re-tracks and restores tracker.isValid to false", () => {
+    const tracker = new Tracker();
+    const items = new TrackedCollection<RequiredNameModel>(tracker);
+    const item = tracker.construct(() => new RequiredNameModel(tracker));
+    items.push(item);
+    tracker.undo(); // untracked, tracker.isValid = true
+
+    tracker.redo();
+
+    expect(tracker.trackedObjects).toContain(item);
+    expect(tracker.isValid).toBe(false); // invalid contribution restored
+  });
 });
 
 // ---- Models for the sections below ----
@@ -651,6 +677,22 @@ class DeletableModel extends TrackedObject {
   constructor(tracker: Tracker) { super(tracker); }
 }
 
+// ---- Single-property composition lifecycle ----
+
+class LeafModel extends TrackedObject {
+  @Tracked((_, v: string) => (!v ? "Required" : undefined))
+  accessor name: string = "";
+
+  constructor(tracker: Tracker) { super(tracker); }
+}
+
+class NodeModel extends TrackedObject {
+  @Tracked()
+  accessor leaf: LeafModel | null = null;
+
+  constructor(tracker: Tracker) { super(tracker); }
+}
+
 describe("Tracker.deletedObjects", () => {
   it("is empty when no objects are deleted", () => {
     const tracker = new Tracker();
@@ -743,5 +785,88 @@ describe("Tracker.deletedObjects", () => {
     item.destroy();
 
     expect(tracker.deletedObjects).not.toContain(item);
+  });
+});
+
+// ---- Single-property composition lifecycle ----
+
+describe("TrackedObject — @Tracked single-property composition lifecycle", () => {
+  it("1. Assigned: child is tracked as Insert", () => {
+    const tracker = new Tracker();
+    const node = tracker.construct(() => new NodeModel(tracker));
+    const leaf = tracker.construct(() => new LeafModel(tracker));
+
+    node.leaf = leaf;
+
+    expect(leaf.state).toBe(State.Insert);
+    expect(tracker.trackedObjects).toContain(leaf);
+  });
+
+  it("2. Replaced: old child is untracked (collapseInsert), new child is Insert", () => {
+    const tracker = new Tracker();
+    const node = tracker.construct(() => new NodeModel(tracker));
+    const leaf1 = tracker.construct(() => new LeafModel(tracker));
+    node.leaf = leaf1;
+    const leaf2 = tracker.construct(() => new LeafModel(tracker));
+
+    node.leaf = leaf2;
+
+    expect(tracker.trackedObjects).not.toContain(leaf1);
+    expect(tracker.trackedObjects).toContain(leaf2);
+    expect(leaf2.state).toBe(State.Insert);
+  });
+
+  it("3. Replaced undone: old child is re-tracked as Insert, new child is untracked", () => {
+    const tracker = new Tracker();
+    const node = tracker.construct(() => new NodeModel(tracker));
+    const leaf1 = tracker.construct(() => new LeafModel(tracker));
+    node.leaf = leaf1;
+    const leaf2 = tracker.construct(() => new LeafModel(tracker));
+    node.leaf = leaf2;
+
+    tracker.undo();
+
+    expect(tracker.trackedObjects).toContain(leaf1);
+    expect(leaf1.state).toBe(State.Insert);
+    expect(tracker.trackedObjects).not.toContain(leaf2);
+  });
+
+  it("4. Replaced undone then redone: old child is untracked again, new child is re-tracked as Insert", () => {
+    const tracker = new Tracker();
+    const node = tracker.construct(() => new NodeModel(tracker));
+    const leaf1 = tracker.construct(() => new LeafModel(tracker));
+    node.leaf = leaf1;
+    const leaf2 = tracker.construct(() => new LeafModel(tracker));
+    node.leaf = leaf2;
+    tracker.undo();
+
+    tracker.redo();
+
+    expect(tracker.trackedObjects).not.toContain(leaf1);
+    expect(tracker.trackedObjects).toContain(leaf2);
+    expect(leaf2.state).toBe(State.Insert);
+  });
+
+  it("validity flows correctly through replace → undo → redo", () => {
+    const tracker = new Tracker();
+    const node = tracker.construct(() => new NodeModel(tracker));
+    const leaf1 = tracker.construct(() => new LeafModel(tracker)); // name="" → invalid
+    node.leaf = leaf1;
+    // leaf1 is invalid → tracker.isValid = false
+
+    // leaf2 is constructed with a valid name (set during construct, suppressed)
+    const leaf2 = tracker.construct(() => {
+      const l = new LeafModel(tracker);
+      l.name = "valid";
+      return l;
+    });
+    node.leaf = leaf2; // leaf1 collapseInsert-untracked, leaf2 valid Insert
+    expect(tracker.isValid).toBe(true);
+
+    tracker.undo(); // leaf2 untracked, leaf1 re-tracked (invalid)
+    expect(tracker.isValid).toBe(false);
+
+    tracker.redo(); // leaf1 untracked, leaf2 re-tracked (valid)
+    expect(tracker.isValid).toBe(true);
   });
 });

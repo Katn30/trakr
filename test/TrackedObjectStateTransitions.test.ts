@@ -81,6 +81,16 @@ describe("TrackedObject state transitions — Insert", () => {
     expect(item.trackingId).toBe(tid); // trackingId is stable
   });
 
+  it("undo push removes constructed item from trackedObjects — no ghost", () => {
+    const tracker = new Tracker();
+    const items = new TrackedCollection<ItemModel>(tracker);
+    const item = tracker.construct(() => new ItemModel(tracker));
+    items.push(item);
+    tracker.undo();
+
+    expect(tracker.trackedObjects).not.toContain(item);
+  });
+
   it("undo push → redo push → state=Insert, same trackingId → POST", () => {
     const tracker = new Tracker();
     const items = new TrackedCollection<ItemModel>(tracker);
@@ -93,6 +103,7 @@ describe("TrackedObject state transitions — Insert", () => {
 
     expect(item.state).toBe(State.Insert);
     expect(item.trackingId).toBe(tid); // stable across undo/redo
+    expect(tracker.trackedObjects).toContain(item); // re-tracked on redo
   });
 
   it("trackingId usable after undo+redo cycle for onCommit", () => {

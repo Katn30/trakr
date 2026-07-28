@@ -1,5 +1,22 @@
 # Changelog
 
+## [4.3.2] — 2026-07-28
+
+### Fix: undo of collection push no longer leaves Insert-state items as ghosts in `trackedObjects[]`
+
+When a `TrackedObject` created via `tracker.construct()` was pushed into a `TrackedCollection` and that push was then undone, the object remained in `tracker.trackedObjects[]` with its validators still firing — leaving `tracker.isValid` permanently false even though the item was no longer logically present.
+
+**Root cause.** `_markAdded` registered its undo action as a bare `applyStateTransition(obj, "added", "undo")`, which only set state back to `Unchanged`. It did not call `_untrackObject`. The symmetric case in `_markRemoved` (explicit remove of an `Insert` item — the `collapseInsert` path) correctly untracks the object; `_markAdded` lacked the equivalent cleanup on its undo path.
+
+**Fix.** `_markAdded` now mirrors the `collapseInsert` pattern:
+
+- **Undo path:** calls `_untrackObject` before applying the state transition, removing the ghost and correcting `_invalidCount`.
+- **Redo path:** if the object has been untracked (not in `trackedObjects[]`), calls `_trackObject` and restores its validity contribution before setting `Insert` state — exactly the symmetry `_markRemoved` uses in its own undo path.
+
+After this fix, undoing a push of a newly-constructed object removes it from `trackedObjects[]`, clears its validation contribution, and restores `tracker.isValid` to its pre-push state.
+
+---
+
 ## [4.3.1] — 2026-07-27
 
 ### New: `tracker.new()` — construction with tracked defaults

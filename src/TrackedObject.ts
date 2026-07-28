@@ -7,11 +7,7 @@ import { PropertyType } from "./PropertyType";
 import { IdAssignment, getAutoIdProperty } from "./ExternallyAssigned";
 import { DependencyTracker } from "./DependencyTracker";
 import { ITracked } from "./ITracked";
-import {
-  StateTarget,
-  applyStateTransition,
-  buildCommittedContext,
-} from "./TrackedObjectStateMachine";
+import { StateTarget, applyStateTransition, buildCommittedContext } from "./TrackedObjectStateMachine";
 
 export interface TrackedPropertyChanged {
   property: string;
@@ -97,11 +93,11 @@ export abstract class TrackedObject implements ITracked, StateTarget {
     const autoIdProp = getAutoIdProperty(Object.getPrototypeOf(this));
     const context = buildCommittedContext(this, autoIdProp, keys);
 
-    const redoFn = () => applyStateTransition(this, 'committed', 'do', context);
-    const undoFn = () => applyStateTransition(this, 'committed', 'undo', context);
+    const redoFn = () => applyStateTransition(this, "committed", "do", context);
+    const undoFn = () => applyStateTransition(this, "committed", "undo", context);
 
     if (lastOp) {
-      lastOp.updateOrAdd(redoFn, undoFn, new OperationProperties(this, '__state__', PropertyType.Object));
+      lastOp.updateOrAdd(redoFn, undoFn, new OperationProperties(this, "__state__", PropertyType.Object));
     }
     redoFn();
   }
@@ -115,7 +111,7 @@ export abstract class TrackedObject implements ITracked, StateTarget {
 
     this.tracker._doAndTrack(
       () => {
-        applyStateTransition(this, 'removed', 'do');
+        applyStateTransition(this, "removed", "do");
         if (collapseInsert) {
           DependencyTracker.clearDeps(this);
           this.tracker._untrackObject(this);
@@ -126,9 +122,9 @@ export abstract class TrackedObject implements ITracked, StateTarget {
           this.tracker._trackObject(this);
           if (!wasValid) this.tracker._onValidityChanged(true, false);
         }
-        applyStateTransition(this, 'removed', 'undo', { prevState, prevDirtyCounter });
+        applyStateTransition(this, "removed", "undo", { prevState, prevDirtyCounter });
       },
-      new OperationProperties(this, '__state__', PropertyType.Object),
+      new OperationProperties(this, "__state__", PropertyType.Object)
     );
   }
 
@@ -136,10 +132,20 @@ export abstract class TrackedObject implements ITracked, StateTarget {
   public _markAdded(): void {
     if (this._state !== State.Unchanged) return;
     if (this.tracker._isTrackingSuppressed) return;
+    const wasValid = this._isValid;
     this.tracker._doAndTrack(
-      () => applyStateTransition(this, 'added', 'do'),
-      () => applyStateTransition(this, 'added', 'undo'),
-      new OperationProperties(this, '__state__', PropertyType.Object),
+      () => {
+        if (this.tracker.trackedObjects.indexOf(this) === -1) {
+          this.tracker._trackObject(this);
+          if (!wasValid) this.tracker._onValidityChanged(true, false);
+        }
+        applyStateTransition(this, "added", "do");
+      },
+      () => {
+        this.tracker._untrackObject(this);
+        applyStateTransition(this, "added", "undo");
+      },
+      new OperationProperties(this, "__state__", PropertyType.Object)
     );
   }
 

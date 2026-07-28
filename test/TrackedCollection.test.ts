@@ -753,6 +753,32 @@ describe("TrackedCollection — Insert-remove untracks the item", () => {
     expect(tracker.isValid).toBe(false);
   });
 
+  it("undo of push (Added undone) — item is untracked and does not participate in validation", () => {
+    const col = new TrackedCollection<RequiredNameItem>(tracker);
+    const item = tracker.construct(() => new RequiredNameItem(tracker));
+    col.push(item);
+    expect(tracker.isValid).toBe(false);
+
+    tracker.undo();
+
+    expect(tracker.trackedObjects).not.toContain(item);
+    expect(tracker.isValid).toBe(true);
+  });
+
+  it("undo then redo of push (Added undone + redone) — item is re-tracked and participates again", () => {
+    const col = new TrackedCollection<RequiredNameItem>(tracker);
+    const item = tracker.construct(() => new RequiredNameItem(tracker));
+    col.push(item);
+    tracker.undo();
+    expect(tracker.isValid).toBe(true);
+
+    tracker.redo();
+
+    expect(tracker.trackedObjects).toContain(item);
+    expect(item.state).toBe(State.Insert);
+    expect(tracker.isValid).toBe(false);
+  });
+
   it("consumer does not need to call destroy() after remove for Insert items", () => {
     const col = new TrackedCollection<RequiredNameItem>(tracker);
     const item = tracker.construct(() => new RequiredNameItem(tracker));
