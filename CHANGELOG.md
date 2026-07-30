@@ -1,6 +1,6 @@
 # Changelog
 
-## [4.4.0] — 2026-07-30
+## [4.5.0] — 2026-07-30
 
 ### New: `TrackedContainer` — compose child validity and dirty state into a single model
 
@@ -60,6 +60,10 @@ section.isValid;  // false — sub.name is '' (invalid)
 sub.name = 'Fix the bug';
 section.isValid;  // true  — own validator passes + subtask is now valid
 ```
+
+**Collection item tracking.** When `trackChild` receives a `TrackedCollection`, it does not just check the collection's own validator — it also registers every `TrackedObject` currently in the collection as a child, then subscribes to `collection.changed` to add and remove items dynamically as they are pushed or removed (including across undo and redo). This means item-level validity and dirty state propagate to the container automatically without any extra wiring.
+
+**`untrackChild`.** The symmetric counterpart to `trackChild`. For a `TrackedObject` child it removes it from the child list; for a `TrackedCollection` child it additionally unsubscribes from `changed` and removes all current items from the child list. No-op if the child was never registered.
 
 **Internal refactor — `_setIsValid` on `TrackedObject`.** The `isValid` setter on `TrackedObject` was `private`. To allow `TrackedContainer` to correctly redeclare the setter (required because overriding a getter in a subclass silently drops the inherited setter in JS), the setter is now `protected` and delegates to a new `protected _setIsValid(value)` method. The external API is unchanged; the refactor is internal to the class hierarchy.
 

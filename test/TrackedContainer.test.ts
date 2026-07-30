@@ -309,3 +309,203 @@ describe("TrackedContainer – isDirty", () => {
     expect(container.isDirty).toBe(true);
   });
 });
+
+// ---- collection item tracking ----
+
+describe("TrackedContainer – collection items are tracked automatically", () => {
+  it("item already in the collection at trackChild time makes container invalid", () => {
+    const tracker = new Tracker();
+    const item = tracker.construct(() => new ChildModel(tracker)); // name="" → invalid
+    const items = new TrackedCollection<ChildModel>(tracker, [item]);
+    const container = tracker.construct(
+      () => new MultiChildContainer(tracker, [items]),
+    );
+
+    expect(item.isValid).toBe(false);
+    expect(container.isValid).toBe(false);
+  });
+
+  it("item pre-existing in collection: container becomes valid when item becomes valid", () => {
+    const tracker = new Tracker();
+    const item = tracker.construct(() => new ChildModel(tracker));
+    const items = new TrackedCollection<ChildModel>(tracker, [item]);
+    const container = tracker.construct(
+      () => new MultiChildContainer(tracker, [items]),
+    );
+
+    item.name = "Alice";
+
+    expect(item.isValid).toBe(true);
+    expect(container.isValid).toBe(true);
+  });
+
+  it("pushing an invalid item makes the container invalid", () => {
+    const tracker = new Tracker();
+    const items = new TrackedCollection<ChildModel>(tracker);
+    const container = tracker.construct(
+      () => new MultiChildContainer(tracker, [items]),
+    );
+    expect(container.isValid).toBe(true);
+
+    const item = tracker.construct(() => new ChildModel(tracker)); // name="" → invalid
+    items.push(item);
+
+    expect(container.isValid).toBe(false);
+  });
+
+  it("pushed item becoming valid makes the container valid again", () => {
+    const tracker = new Tracker();
+    const items = new TrackedCollection<ChildModel>(tracker);
+    const container = tracker.construct(
+      () => new MultiChildContainer(tracker, [items]),
+    );
+    const item = tracker.construct(() => new ChildModel(tracker));
+    items.push(item);
+    expect(container.isValid).toBe(false);
+
+    item.name = "Alice";
+
+    expect(container.isValid).toBe(true);
+  });
+
+  it("removing an invalid item restores container validity", () => {
+    const tracker = new Tracker();
+    const items = new TrackedCollection<ChildModel>(tracker);
+    const container = tracker.construct(
+      () => new MultiChildContainer(tracker, [items]),
+    );
+    const item = tracker.construct(() => new ChildModel(tracker));
+    items.push(item);
+    expect(container.isValid).toBe(false);
+
+    items.remove(item);
+
+    expect(container.isValid).toBe(true);
+  });
+
+  it("undoing a push removes the item from tracking", () => {
+    const tracker = new Tracker();
+    const items = new TrackedCollection<ChildModel>(tracker);
+    const container = tracker.construct(
+      () => new MultiChildContainer(tracker, [items]),
+    );
+    const item = tracker.construct(() => new ChildModel(tracker));
+    items.push(item);
+    expect(container.isValid).toBe(false);
+
+    tracker.undo();
+
+    expect(container.isValid).toBe(true);
+  });
+
+  it("redoing a push re-adds the item to tracking", () => {
+    const tracker = new Tracker();
+    const items = new TrackedCollection<ChildModel>(tracker);
+    const container = tracker.construct(
+      () => new MultiChildContainer(tracker, [items]),
+    );
+    const item = tracker.construct(() => new ChildModel(tracker));
+    items.push(item);
+    tracker.undo();
+    expect(container.isValid).toBe(true);
+
+    tracker.redo();
+
+    expect(container.isValid).toBe(false);
+  });
+
+  it("isDirty is true when a collection item has dirty fields", () => {
+    const tracker = new Tracker();
+    const item = tracker.construct(() => new ChildModel(tracker));
+    const items = new TrackedCollection<ChildModel>(tracker, [item]);
+    const container = tracker.construct(
+      () => new MultiChildContainer(tracker, [items]),
+    );
+
+    item.name = "Alice";
+
+    expect(item.isDirty).toBe(true);
+    expect(container.isDirty).toBe(true);
+  });
+});
+
+// ---- untrackChild ----
+
+describe("TrackedContainer – untrackChild", () => {
+  it("untracking a TrackedObject child stops its validity from affecting the container", () => {
+    const tracker = new Tracker();
+    const child = tracker.construct(() => new ChildModel(tracker)); // name="" → invalid
+
+    class DynamicContainer extends TrackedContainer {
+      constructor(t: Tracker) {
+        super(t);
+        this.trackChild(child);
+      }
+      remove() { this.untrackChild(child); }
+    }
+
+    const container = tracker.construct(() => new DynamicContainer(tracker));
+    expect(container.isValid).toBe(false);
+
+    container.remove();
+
+    expect(container.isValid).toBe(true);
+  });
+
+  it("untracking a TrackedCollection stops its items from affecting the container", () => {
+    const tracker = new Tracker();
+    const item = tracker.construct(() => new ChildModel(tracker)); // invalid
+    const items = new TrackedCollection<ChildModel>(tracker, [item]);
+
+    class DynamicContainer extends TrackedContainer {
+      constructor(t: Tracker) {
+        super(t);
+        this.trackChild(items);
+      }
+      remove() { this.untrackChild(items); }
+    }
+
+    const container = tracker.construct(() => new DynamicContainer(tracker));
+    expect(container.isValid).toBe(false);
+
+    container.remove();
+
+    expect(container.isValid).toBe(true);
+  });
+
+  it("after untracking a collection, newly pushed items no longer affect the container", () => {
+    const tracker = new Tracker();
+    const items = new TrackedCollection<ChildModel>(tracker);
+
+    class DynamicContainer extends TrackedContainer {
+      constructor(t: Tracker) {
+        super(t);
+        this.trackChild(items);
+      }
+      remove() { this.untrackChild(items); }
+    }
+
+    const container = tracker.construct(() => new DynamicContainer(tracker));
+    container.remove();
+
+    const item = tracker.construct(() => new ChildModel(tracker)); // invalid
+    items.push(item);
+
+    expect(container.isValid).toBe(true);
+  });
+
+  it("untracking a child that was never tracked is a no-op", () => {
+    const tracker = new Tracker();
+    const foreign = tracker.construct(() => new ChildModel(tracker));
+
+    class DynamicContainer extends TrackedContainer {
+      constructor(t: Tracker) { super(t); }
+      remove() { this.untrackChild(foreign); }
+    }
+
+    const container = tracker.construct(() => new DynamicContainer(tracker));
+
+    expect(() => container.remove()).not.toThrow();
+    expect(container.isValid).toBe(true);
+  });
+});

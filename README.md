@@ -1334,7 +1334,7 @@ items.trackedChanged.subscribe((e) => {
 
 An abstract base class that extends `TrackedObject` with the ability to **compose child objects and collections into a single validity and dirty check**.
 
-Extend it when a model owns children whose `isValid` and `isDirty` state should roll up to the parent — for example, a form section that both has its own validated fields and directly owns sub-objects.
+Extend it when a model owns children whose `isValid` and `isDirty` state should roll up to the parent — for example, a form section that has its own validated fields and owns a collection of sub-items.
 
 **Simple example: one section, one owned child object**
 
@@ -1374,11 +1374,69 @@ section.owner = 'Alice';
 section.isValid;    // true  — both own field and child are now valid
 ```
 
+**Example: section owns a collection of sub-items**
+
+When `trackChild` receives a `TrackedCollection`, every item already in the collection is tracked immediately, and items pushed or removed later are tracked/untracked automatically — including across undo and redo.
+
+```typescript
+class SubtaskDraft extends TrackedObject {
+  @Tracked((_, v: string) => (!v ? 'Name required' : undefined))
+  accessor name: string = '';
+
+  constructor(tracker: Tracker) { super(tracker); }
+}
+
+class ActionsSection extends TrackedContainer {
+  @Tracked((_, v: string) => (!v ? 'Owner required' : undefined))
+  accessor owner: string = '';
+
+  readonly subtasks: TrackedCollection<SubtaskDraft>;
+
+  constructor(tracker: Tracker, subtasks: TrackedCollection<SubtaskDraft>) {
+    super(tracker);
+    this.subtasks = subtasks;
+    this.trackChild(subtasks);  // registers the collection AND its items
+  }
+}
+
+const tracker  = new Tracker();
+const subtasks = new TrackedCollection<SubtaskDraft>(tracker);
+const section  = tracker.construct(() => new ActionsSection(tracker, subtasks));
+
+section.owner = 'Alice';
+section.isValid;    // true  — own field valid, no items yet
+
+const sub = tracker.construct(() => new SubtaskDraft(tracker)); // name='' → invalid
+subtasks.push(sub);
+section.isValid;    // false — sub.name is '' (item is tracked automatically on push)
+
+sub.name = 'Fix the bug';
+section.isValid;    // true  — all own fields and all items are now valid
+
+subtasks.remove(sub);
+section.isValid;    // true  — invalid item removed, nothing left to fail
+```
+
 **`protected trackChild(child)`**
 
 Registers a `TrackedObject` or `TrackedCollection` as a child. Call it from the subclass constructor. A container can have any number of children.
 
-When `child` is a `TrackedCollection`, `isValid` checks the collection's **own validator** (if one was passed to its constructor) — not the validity of the items inside it. To propagate per-item validity, register each item as a child directly, or supply a collection validator that inspects items.
+When `child` is a **`TrackedCollection`**, `trackChild` does three things automatically:
+
+1. Registers the collection itself (so its own validator, if any, contributes to `isValid`).
+2. Registers every `TrackedObject` already inside the collection as a child.
+3. Subscribes to `collection.changed` so that items pushed in later are added to tracking and items removed are dropped from tracking — including across undo and redo.
+
+This means item-level validity and dirty state propagate to the container without any extra wiring: an invalid item anywhere in a registered collection makes `container.isValid` false, and fixing that item makes it true again.
+
+**`protected untrackChild(child)`**
+
+Removes a previously registered child. The symmetric counterpart to `trackChild`.
+
+- For a `TrackedObject` child: removes it from the container's child list.
+- For a `TrackedCollection` child: removes the collection, unsubscribes from its `changed` event, and removes all items currently in the collection from the child list. Items pushed to the collection after this call are ignored.
+
+Calling `untrackChild` on a child that was never registered is a no-op.
 
 **`isValid`**
 
