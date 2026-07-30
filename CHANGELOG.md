@@ -1,5 +1,74 @@
 # Changelog
 
+## [4.4.0] — 2026-07-30
+
+### New: `TrackedContainer` — compose child validity and dirty state into a single model
+
+Adds `TrackedContainer`, an abstract base class extending `TrackedObject` that lets a model register child objects and collections so that its own `isValid` and `isDirty` roll up across the whole subtree.
+
+**The problem.** When a form section owns both `@Tracked` fields and a `TrackedCollection` of sub-items, there is no first-class way to ask "is this section complete?" — the section model's `isValid` only reflects its own field validators, not the validity of items in the collection. Consumer code had to write ad-hoc getters like:
+
+```typescript
+get isActionsSectionValid(): boolean {
+  return this.subtasks.collection.every(s => s.validationMessages.size === 0);
+}
+```
+
+This works reactively (via `trackerVersion` re-renders) but is not composable or symmetric with how other sections expose `isValid`.
+
+**The solution.** `TrackedContainer` adds a `protected trackChild()` method. Subclasses call it from their constructor to register any `TrackedObject` or `TrackedCollection`. The two overridden getters then compose:
+
+- `isValid` — `true` when the container's own validators all pass AND every registered child is valid
+- `isDirty` — `true` when the container itself has uncommitted changes OR any registered TrackedObject child is dirty
+
+```typescript
+import {
+  TrackedContainer,
+  TrackedCollection,
+  TrackedObject,
+  Tracked,
+  Tracker,
+} from '@katn30/trakr';
+
+class SubtaskDraft extends TrackedObject {
+  @Tracked((_, v: string) => (!v ? 'Name required' : undefined))
+  accessor name: string = '';
+
+  constructor(tracker: Tracker) { super(tracker); }
+}
+
+class ActionsSection extends TrackedContainer {
+  @Tracked((_, v: string) => (!v ? 'Owner required' : undefined))
+  accessor owner: string = '';
+
+  readonly subtasks: TrackedCollection<SubtaskDraft>;
+
+  constructor(tracker: Tracker, subtasks: TrackedCollection<SubtaskDraft>) {
+    super(tracker);
+    this.subtasks = subtasks;
+    this.trackChild(subtasks);
+  }
+}
+
+const tracker = new Tracker();
+const subtasks = new TrackedCollection<SubtaskDraft>(tracker);
+const section  = tracker.construct(() => new ActionsSection(tracker, subtasks));
+const sub      = tracker.construct(() => new SubtaskDraft(tracker));
+subtasks.push(sub);
+
+section.isValid;  // false — sub.name is '' (invalid)
+sub.name = 'Fix the bug';
+section.isValid;  // true  — own validator passes + subtask is now valid
+```
+
+**Internal refactor — `_setIsValid` on `TrackedObject`.** The `isValid` setter on `TrackedObject` was `private`. To allow `TrackedContainer` to correctly redeclare the setter (required because overriding a getter in a subclass silently drops the inherited setter in JS), the setter is now `protected` and delegates to a new `protected _setIsValid(value)` method. The external API is unchanged; the refactor is internal to the class hierarchy.
+
+**`tracker.isValid` is unaffected.** Each child already calls `tracker._onValidityChanged()` directly when its own validity changes, so global validity accounting is correct without any extra work. `TrackedContainer.isValid` is purely a per-object composed getter for consumer code that needs section-level validity.
+
+No breaking changes. Existing code using `TrackedObject`, `@Tracked`, `TrackedCollection`, and `Tracker` is unaffected.
+
+---
+
 ## [4.3.2] — 2026-07-28
 
 ### Fix: undo of collection push no longer leaves Insert-state items as ghosts in `trackedObjects[]`

@@ -60,12 +60,15 @@ export abstract class TrackedObject implements ITracked, StateTarget {
   public get isValid(): boolean {
     return this._isValid;
   }
-  private set isValid(value: boolean) {
+  protected _setIsValid(value: boolean): void {
     const wasValid = this._isValid;
     this._isValid = value;
     if (wasValid !== value) {
       this.tracker._onValidityChanged(wasValid, value);
     }
+  }
+  protected set isValid(value: boolean) {
+    this._setIsValid(value);
   }
 
   public get isDirty(): boolean {

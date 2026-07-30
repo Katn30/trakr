@@ -1330,6 +1330,130 @@ items.trackedChanged.subscribe((e) => {
 
 ---
 
+### `TrackedContainer`
+
+An abstract base class that extends `TrackedObject` with the ability to **compose child objects and collections into a single validity and dirty check**.
+
+Extend it when a model owns children whose `isValid` and `isDirty` state should roll up to the parent — for example, a form section that both has its own validated fields and directly owns sub-objects.
+
+**Simple example: one section, one owned child object**
+
+```typescript
+import {
+  TrackedContainer,
+  TrackedObject,
+  Tracked,
+  Tracker,
+} from '@katn30/trakr';
+
+class SubtaskDraft extends TrackedObject {
+  @Tracked((_, v: string) => (!v ? 'Name required' : undefined))
+  accessor name: string = '';
+
+  constructor(tracker: Tracker) { super(tracker); }
+}
+
+class ActionsSection extends TrackedContainer {
+  @Tracked((_, v: string) => (!v ? 'Owner required' : undefined))
+  accessor owner: string = '';
+
+  constructor(tracker: Tracker, subtask: SubtaskDraft) {
+    super(tracker);
+    this.trackChild(subtask);  // register the child object
+  }
+}
+
+const tracker = new Tracker();
+const sub = tracker.construct(() => new SubtaskDraft(tracker));      // name='' → invalid
+const section = tracker.construct(() => new ActionsSection(tracker, sub));
+
+section.isValid;    // false — sub.name is '' (invalid)
+sub.name = 'Fix the bug';
+section.isValid;    // false — own owner field is still ''
+section.owner = 'Alice';
+section.isValid;    // true  — both own field and child are now valid
+```
+
+**`protected trackChild(child)`**
+
+Registers a `TrackedObject` or `TrackedCollection` as a child. Call it from the subclass constructor. A container can have any number of children.
+
+When `child` is a `TrackedCollection`, `isValid` checks the collection's **own validator** (if one was passed to its constructor) — not the validity of the items inside it. To propagate per-item validity, register each item as a child directly, or supply a collection validator that inspects items.
+
+**`isValid`**
+
+Returns `true` when all of the following hold:
+
+- Every `@Tracked` validator on the container's own fields passes
+- Every registered child's `isValid` is `true`
+
+This is a per-object read — it does not affect `tracker.isValid`, which is already correct because each child calls `tracker._onValidityChanged` independently.
+
+**`isDirty`**
+
+Returns `true` when:
+
+- The container has its own uncommitted field changes (`_dirtyCounter !== 0`), OR
+- Any registered `TrackedObject` child has uncommitted field changes
+
+**Multi-level trees: `TrackedContainer` must be used at every intermediate node**
+
+`container.isValid` checks each registered child by calling `child.isValid`. What that call returns depends on what `child` is:
+
+- If `child` is a **`TrackedContainer`**, `child.isValid` also walks *its* registered children — and so on down the tree. Invalidity at any leaf propagates upward automatically.
+- If `child` is a plain **`TrackedObject`**, `child.isValid` reflects only that object's own `@Tracked` validators — its children (if any) are invisible to the parent container.
+
+This means every intermediate node in the tree must extend `TrackedContainer` and register its own children, or validity will not propagate past that node.
+
+```
+✓ Correct — every intermediate node is a TrackedContainer
+
+  IssueForm (TrackedContainer)
+    ├── trackChild(mainSection)
+    └── trackChild(actionsSection)
+
+  MainSection (TrackedContainer)          ← intermediate node
+    └── trackChild(analysisBlock)
+
+  AnalysisBlock (TrackedContainer)        ← intermediate node
+    └── @Tracked accessor summary
+
+  ActionsSection (TrackedContainer)       ← intermediate node
+    ├── @Tracked accessor owner
+    └── trackChild(subtask1)
+
+  Subtask1 (TrackedObject with @Tracked validators)   ← leaf
+```
+
+```
+✗ Broken — MainSection is a plain TrackedObject
+
+  IssueForm (TrackedContainer)
+    └── trackChild(mainSection)
+
+  MainSection (TrackedObject)             ← plain — does NOT compose children
+    └── (owns analysisBlock but never calls trackChild)
+
+  AnalysisBlock (TrackedContainer)        ← never reached by IssueForm.isValid
+    └── @Tracked accessor summary = ''   ← this invalidity is invisible
+```
+
+In the broken example, `issueForm.isValid` calls `mainSection.isValid`, which returns `mainSection._isValid` (own fields only). `AnalysisBlock` is never consulted. A required `summary` field staying empty will not prevent a save.
+
+The fix is to make `MainSection` a `TrackedContainer` and add `this.trackChild(analysisBlock)` in its constructor.
+
+**When to use `TrackedContainer` vs reading `tracker.isValid`**
+
+`tracker.isValid` aggregates validity across the entire tracker — all models, all collections. `TrackedContainer.isValid` gives a per-section validity that you can bind directly to a UI element (an error badge, a "section incomplete" indicator) without scanning the whole tracker.
+
+```typescript
+// Drive a section error badge in React
+useTrackerVersion(tracker);
+return <SectionHeader hasError={!section.isValid} />;
+```
+
+---
+
 ### `TypedEvent<T>`
 
 A lightweight, strongly-typed event emitter. Used internally for `tracker.isDirtyChanged`, `tracker.isValidChanged`, `TrackedObject.changed`, `TrackedObject.trackedChanged`, `TrackedCollection.changed`, and `TrackedCollection.trackedChanged`, and available for your own use.
