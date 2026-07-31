@@ -589,6 +589,17 @@ class TwoValidatorsModel extends TrackedObject {
   }
 }
 
+let collectionCrossDepCalls = 0;
+
+class ThresholdModel extends TrackedObject {
+  @Tracked()
+  accessor threshold: number = 3;
+
+  constructor(tracker: Tracker) {
+    super(tracker);
+  }
+}
+
 describe("Dependency tracking — integration", () => {
   let tracker: Tracker;
 
@@ -818,6 +829,60 @@ describe("Dependency tracking — integration", () => {
       expect(m.validationMessages.has("nameA")).toBe(false);
       expect(m.validationMessages.get("nameB")).toBe("too many");
       expect(m.isValid).toBe(false);
+    });
+  });
+
+  describe("TrackedCollection own validator re-runs on cross-object dep change", () => {
+    let thresholdModel: ThresholdModel;
+    let col: TrackedCollection<number>;
+
+    beforeEach(() => {
+      collectionCrossDepCalls = 0;
+      thresholdModel = tracker.construct(() => new ThresholdModel(tracker));
+      // validator reads thresholdModel.threshold — a cross-object @Tracked dep
+      col = new TrackedCollection<number>(tracker, [1, 2], (items) => {
+        collectionCrossDepCalls++;
+        return items.length > thresholdModel.threshold ? "Too many" : undefined;
+      });
+      collectionCrossDepCalls = 0; // ignore the construction-time call
+    });
+
+    it("is valid initially when items.length <= threshold", () => {
+      expect(col.isValid).toBe(true);
+      expect(col.error).toBeUndefined();
+    });
+
+    it("re-validates when threshold drops below items.length", () => {
+      thresholdModel.threshold = 1; // items.length=2 > 1 → invalid
+      expect(col.isValid).toBe(false);
+      expect(col.error).toBe("Too many");
+    });
+
+    it("validator is re-run exactly once per threshold change", () => {
+      thresholdModel.threshold = 1;
+      expect(collectionCrossDepCalls).toBe(1);
+    });
+
+    it("re-validates when threshold rises above items.length again", () => {
+      thresholdModel.threshold = 1; // invalid
+      thresholdModel.threshold = 5; // valid again
+      expect(col.isValid).toBe(true);
+      expect(col.error).toBeUndefined();
+    });
+
+    it("tracker.isValid reflects collection validity after cross-object dep change", () => {
+      expect(tracker.isValid).toBe(true);
+      thresholdModel.threshold = 1;
+      expect(tracker.isValid).toBe(false);
+      thresholdModel.threshold = 5;
+      expect(tracker.isValid).toBe(true);
+    });
+
+    it("validator is not re-run after collection is destroyed", () => {
+      col.destroy();
+      collectionCrossDepCalls = 0;
+      thresholdModel.threshold = 1;
+      expect(collectionCrossDepCalls).toBe(0);
     });
   });
 

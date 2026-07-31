@@ -105,7 +105,10 @@ export class TrackedCollection<T> implements Array<T>, ITracked {
 
   /** @internal */
   _validate(): void {
-    this.error = this._validator ? this._validator(this.collection) : undefined;
+    const deps = DependencyTracker.collect(() => {
+      this.error = this._validator ? this._validator(this.collection) : undefined;
+    });
+    DependencyTracker.updateDeps(this, COLLECTION_VERSION_KEY, deps);
     this.isValid = this.error === undefined;
   }
 
@@ -516,6 +519,7 @@ export class TrackedCollection<T> implements Array<T>, ITracked {
   }
 
   public destroy(): void {
+    DependencyTracker.clearDeps(this);
     this.tracker._untrackCollection(this);
   }
 }

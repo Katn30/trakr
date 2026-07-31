@@ -367,6 +367,7 @@ trakr runs validators automatically — you never call them directly. They run:
 - After every tracked write to the decorated property
 - After every undo and redo
 - Once for every property on every model after `tracker.construct()` or `tracker.new()` completes
+- When any `@Tracked` property read during the previous validator call is written on any object (cross-object dependency re-evaluation)
 
 Results are stored per-property in `model.validationMessages: Map<string, string>` and aggregated into:
 
@@ -376,7 +377,7 @@ Results are stored per-property in `model.validationMessages: Map<string, string
 
 `tracker.isValidChanged` and `tracker.canCommitChanged` fire whenever these values change, so UI can bind directly to them without polling.
 
-**Collection validators** are a separate function passed as the third argument to the `TrackedCollection` constructor. They receive the full array and return an error string or `undefined`. The result is exposed on `collection.error` and `collection.isValid`, and rolls up into `tracker.isValid`.
+**Collection validators** are a separate function passed as the third argument to the `TrackedCollection` constructor. They receive the full array and return an error string or `undefined`. The result is exposed on `collection.error` and `collection.isValid`, and rolls up into `tracker.isValid`. Collection validators participate in the same cross-object dependency tracking as scalar validators — if the validator reads a `@Tracked` property on another object, the validator re-runs automatically when that property changes.
 
 ```typescript
 const items = new TrackedCollection<string>(

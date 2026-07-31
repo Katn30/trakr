@@ -1,5 +1,23 @@
 # Changelog
 
+## [4.5.1] — 2026-07-31
+
+### Fix: collection validators now re-run when cross-object tracked dependencies change
+
+`TrackedCollection` validator functions were not executed inside the reactive collector context. Reads of `@Tracked` / `@EventTracked` accessors on other objects inside a collection validator were silently discarded — no dependency was registered, so the validator had no way to know it needed to re-run when those values changed.
+
+**Consequence.** A collection validator whose result depends on external state (e.g. `issue.stage`, `model.analysisSummary`) only re-ran when the collection structure changed (items added or removed). If the collection stayed structurally unchanged while an external dep changed, the validator was never re-run, leaving `collection.isValid`, `tracker.isValid`, and `tracker.canCommit` stale.
+
+**Fix.** `TrackedCollection._validate()` now wraps the validator call in `DependencyTracker.collect()` and registers the captured deps via `DependencyTracker.updateDeps()` — the same mechanism already used by scalar `@Tracked` / `@EventTracked` field validators in `validateSingleProperty()`. When any captured dep is subsequently written, the collection validator is automatically scheduled for re-evaluation.
+
+`TrackedCollection.destroy()` now calls `DependencyTracker.clearDeps()` to remove stale reverse-dependency entries when a collection is discarded.
+
+Scalar `@Tracked` and `@EventTracked` field validators were unaffected by this bug — they were already executed inside `collect()`.
+
+No breaking changes.
+
+---
+
 ## [4.5.0] — 2026-07-30
 
 ### New: `TrackedContainer` — compose child validity and dirty state into a single model
