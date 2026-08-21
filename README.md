@@ -414,11 +414,11 @@ tracker.construct(() => {
 
 **`tracker.new()` — creating new objects**
 
-Does **not** suppress tracking — defaults set in the constructor are recorded as real changes. The tracker is dirty immediately after it returns, and those defaults appear in `EventTracker.generateEvents()` on the next save.
+Defaults set in the constructor fire `changed` events and appear in `EventTracker.generateEvents()` on the next save. Constructor writes are not added to the undo stack, so the tracker is clean immediately after it returns.
 
 ```typescript
 const invoice = tracker.new(() => new InvoiceModel(tracker));
-// tracker.isDirty === true
+// tracker.isDirty === false
 // defaults appear in generateEvents()
 ```
 
@@ -434,7 +434,7 @@ class InvoiceModel extends TrackedObject {
     if (data) {
       this.status = data.status; // suppressed when called via tracker.construct()
     } else {
-      this.status = 'draft';     // tracked when called via tracker.new()
+      this.status = 'draft';     // fires changed, appears in generateEvents()
     }
   }
 }
@@ -690,7 +690,7 @@ tracker.construct(() => {
 const fresh = tracker.new(() => new MyModel(tracker));
 ```
 
-`tracker.construct()` suppresses tracking for the entire callback. `tracker.new()` does not — constructor-set defaults are recorded as real changes and the tracker is dirty on return. Both run validators once after all objects are created and call `tracker.revalidate()` exactly once at the end.
+`tracker.construct()` suppresses tracking entirely. `tracker.new()` lets `changed` events fire during construction — so defaults appear in `generateEvents()` — but discards the undo entries, leaving the tracker clean. Both run validators once after all objects are created and call `tracker.revalidate()` exactly once at the end.
 
 **Tracking suppression**
 
@@ -1845,7 +1845,7 @@ interface GeneratedEvent<
 
 4. **`@Tracked` and `@EventTracked` are freely mixable on the same class.** `@Tracked` fields participate in undo/redo/validation as usual; they simply never appear in event payloads.
 
-5. **`tracker.new()` surfaces constructor defaults in the first event.** Use `tracker.new()` (instead of `tracker.construct()`) when the user creates a new object. Defaults set in the constructor are tracked and appear in `generateEvents()` until `onCommit()` resets the baseline. Use `tracker.construct()` for loading saved data — those writes are suppressed and produce no events.
+5. **`tracker.new()` surfaces constructor defaults in the first event.** Use `tracker.new()` (instead of `tracker.construct()`) when the user creates a new object. Defaults set in the constructor appear in `generateEvents()` until `onCommit()` resets the baseline. The tracker is clean (`isDirty === false`) immediately after `tracker.new()` returns — it becomes dirty only on the first post-construction edit. Use `tracker.construct()` for loading saved data — those writes are suppressed and produce no events.
 
 ### Ordering
 

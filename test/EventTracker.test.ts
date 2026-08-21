@@ -862,10 +862,30 @@ describe("tracker.new()", () => {
     expect(events[0].payload).toEqual({ status: "open", priority: 1 });
   });
 
-  it("tracker is dirty after tracker.new()", () => {
+  it("tracker is not dirty after tracker.new()", () => {
     const tracker = newEventTracker();
     tracker.new(() => new Issue(tracker));
+    expect(tracker.isDirty).toBe(false);
+  });
+
+  it("object is not dirty after tracker.new()", () => {
+    const tracker = newEventTracker();
+    const issue = tracker.new(() => new Issue(tracker));
+    expect(issue.isDirty).toBe(false);
+  });
+
+  it("canUndo is false after tracker.new()", () => {
+    const tracker = newEventTracker();
+    tracker.new(() => new Issue(tracker));
+    expect(tracker.canUndo).toBe(false);
+  });
+
+  it("tracker becomes dirty on first post-construction edit", () => {
+    const tracker = newEventTracker();
+    const issue = tracker.new(() => new Issue(tracker));
+    issue.status = "in-progress";
     expect(tracker.isDirty).toBe(true);
+    expect(issue.isDirty).toBe(true);
   });
 
   it("same constructor: tracker.construct() with data produces no events", () => {

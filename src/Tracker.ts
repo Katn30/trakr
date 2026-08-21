@@ -182,13 +182,23 @@ export class Tracker implements ITrackerContext {
 
   public new<T>(action: () => T): T {
     const objectsBefore = this.trackedObjects.length;
+    const undoLengthBefore = this._undoOperations.length;
+    const savedRedo = [...this._redoOperations];
     this._constructionDepth++;
     const result = action();
+    // changed events fire normally during construction so @EventTracked state is
+    // populated for generateEvents(). Discard the undo entries and restore the
+    // pre-new() redo stack so the tracker is clean on return.
+    this._undoOperations.length = undoLengthBefore;
+    this._redoOperations.length = 0;
+    for (const op of savedRedo) this._redoOperations.push(op);
     for (let i = objectsBefore; i < this.trackedObjects.length; i++) {
       validate(this.trackedObjects[i]);
+      this.trackedObjects[i]._setDirtyCounter(0);
     }
     this._constructionDepth--;
     this.isValid = this._invalidCount === 0;
+    this.reset();
     return result;
   }
 

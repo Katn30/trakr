@@ -1,5 +1,30 @@
 # Changelog
 
+## [4.5.2] — 2026-08-21
+
+### Fix: `tracker.new()` no longer sets `isDirty=true` immediately after construction
+
+`tracker.new()` was not suppressing write tracking during the factory callback. Every `@Tracked` / `@EventTracked` write inside the constructor was pushed onto the undo stack and incremented `dirtyCounter`, making both `tracker.isDirty` and `trackedObject.isDirty` true before the user had touched anything.
+
+**Root cause.** `tracker.construct()` brackets the factory with `_suppressTrackingCounter++` / `--`, so writes are applied silently. `tracker.new()` had no equivalent suppression, so writes went through the full `_doAndTrack` path and created undo entries.
+
+**Why suppression alone is not sufficient for `new()`.** Unlike `construct()`, `tracker.new()` must surface constructor defaults in `EventTracker.generateEvents()`. The event system for scalar `@EventTracked` properties is driven by `changed` events — if writes are suppressed, `changed` never fires and the event state is never populated. The fix therefore cannot simply mirror `construct()`'s suppression approach.
+
+**Fix.** `tracker.new()` now saves the undo/redo stack depths before the factory, runs the factory without suppression (so `changed` fires and event state is populated), then truncates the undo stack back to its pre-construction depth, restores the redo stack, and resets `dirtyCounter` to 0 on all newly registered objects. `reset()` is called at the end to recompute `isDirty`, `canUndo`, and `canRedo`.
+
+**Behaviour after the fix:**
+
+- `tracker.isDirty` is `false` immediately after `tracker.new()` returns.
+- `trackedObject.isDirty` is `false` immediately after `tracker.new()` returns.
+- `tracker.canUndo` is `false` — constructor writes are not in the undo stack.
+- Constructor defaults still appear in `generateEvents()` — `changed` events fired during construction populated the event state.
+- The tracker becomes dirty only on the **first post-construction edit** by the user.
+- `tracker.construct()` behaviour is unchanged.
+
+No breaking changes.
+
+---
+
 ## [4.5.1] — 2026-07-31
 
 ### Fix: collection validators now re-run when cross-object tracked dependencies change
