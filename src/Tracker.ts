@@ -34,6 +34,7 @@ export class Tracker implements ITrackerContext {
   private _currentSession: TrackerSession | undefined;
   private _version: number = 0;
   public _isReplaying: boolean = false;
+  private _pendingRevalidations: Array<{ obj: ITracked; prop: string | undefined }> = [];
 
   public readonly trackedObjects: TrackedObject[] = [];
 
@@ -232,7 +233,9 @@ export class Tracker implements ITrackerContext {
       return;
     }
 
-    if (this.isStartingNewOperation()) {
+    const isInnerWrite = !this.isStartingNewOperation();
+
+    if (!isInnerWrite) {
       this._currentOperationOwner = properties.trackedObject;
       this._currentOperationPropertyName = properties.property;
 
@@ -267,7 +270,14 @@ export class Tracker implements ITrackerContext {
       this._currentOperation = undefined;
       this._currentOperationOwner = undefined;
       this._currentOperationPropertyName = undefined;
+      const pending = this._pendingRevalidations;
+      this._pendingRevalidations = [];
+      for (const { obj, prop } of pending) {
+        this.revalidateTargeted(obj, prop);
+      }
       this.revalidateTargeted(properties.trackedObject, properties.property);
+    } else if (isInnerWrite) {
+      this._pendingRevalidations.push({ obj: properties.trackedObject, prop: properties.property });
     }
   }
 

@@ -1,5 +1,21 @@
 # Changelog
 
+## [4.5.3] — 2026-08-28
+
+### Fix: validators dependent on an inner-write property are now revalidated
+
+When a tracked property was written as an **inner write** — i.e. from inside an `onChange` callback, a `trackedChanged` subscription, or any other listener that fires synchronously during `_doAndTrack`'s `redoAction` — the property's reactive dependents were never revalidated.
+
+**Root cause.** `revalidateTargeted` in `_doAndTrack` was guarded by `isEndingCurrentOperation`, which is only `true` for the **outermost** write in a batch. The outermost write sets `_currentOperationOwner`; any subsequent write arriving while the owner is still set is an inner write. Inner writes joined the same operation correctly, but their property's dependent validators were silently skipped — `isEndingCurrentOperation` was false, so `revalidateTargeted` was never called for them.
+
+**Consequence.** A validator on object B that reads `A.lifecycleState` (a cross-container reactive dependency) would correctly re-run when `A.lifecycleState` was set directly. But if `A.lifecycleState` was set from inside an `onChange` callback triggered by a different outer write (e.g. `subtasks.push()`), `revalidateTargeted` was never called for `lifecycleState`, leaving `B`'s validator permanently stale. `B.isValid` and `tracker.isValid` would remain `true` even though validation should have failed.
+
+**Fix.** `_doAndTrack` now captures whether the current call is an inner write (`!isStartingNewOperation()`) before the outer-write setup block runs. Inner writes push `{ obj, prop }` onto `_pendingRevalidations`. When the outermost operation ends (i.e. `isEndingCurrentOperation` is true), all pending revalidations are drained first — with the full final state already applied — before the outer property's own dependents are revalidated. This ensures all changed properties trigger their dependent validators exactly once, in dependency order, after every write in the batch has settled.
+
+No breaking changes.
+
+---
+
 ## [4.5.2] — 2026-08-21
 
 ### Fix: `tracker.new()` no longer sets `isDirty=true` immediately after construction
