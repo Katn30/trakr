@@ -12,8 +12,8 @@ export interface StateContext {
 }
 
 export interface StateTarget {
-  trackingId: number;
-  state: State;
+  trakrId: number;
+  trakrState: State;
   _setState(value: State): void;
   _getDirtyCounter(): number;
   _setDirtyCounter(value: number): void;
@@ -52,7 +52,7 @@ function applyRemoved(obj: StateTarget, direction: StateDirection, context?: Sta
       }
     }
   } else {
-    if (obj.state === State.Insert) {
+    if (obj.trakrState === State.Insert) {
       obj._setState(State.Unchanged);
       obj._setDirtyCounter(0);
     } else {
@@ -94,13 +94,13 @@ export function buildCommittedContext(
   autoIdProp: string | undefined,
   keys: IdAssignment<unknown>[] | undefined,
 ): StateContext {
-  const prevState = obj.state;
+  const prevState = obj.trakrState;
   let realId: unknown;
   if (
     (prevState === State.Insert || prevState === State.Changed) &&
     keys
   ) {
-    realId = keys.find((k) => k.trackingId === obj.trackingId)?.value;
+    realId = keys.find((k) => k.trackingId === obj.trakrId)?.value;
   }
   return { prevState, autoIdProp, realId };
 }

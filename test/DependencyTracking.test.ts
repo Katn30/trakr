@@ -209,17 +209,17 @@ describe("Dependency tracking", () => {
     it("produces correct validation result after dep change", () => {
       order.quantity = 8; // under the default maxQuantity of 10
       sameObjCalls = 0;
-      expect(order.isValid).toBe(true);
+      expect(order.trakrIsValid).toBe(true);
       order.maxQuantity = 5; // now quantity (8) exceeds maxQuantity (5)
-      expect(order.isValid).toBe(false);
+      expect(order.trakrIsValid).toBe(false);
       expect(order.validationMessages.get("quantity")).toBe("Exceeds max");
     });
 
     it("clears error when dep change makes validation pass again", () => {
       order.quantity = 15; // exceeds default maxQuantity of 10
-      expect(order.isValid).toBe(false);
+      expect(order.trakrIsValid).toBe(false);
       order.maxQuantity = 20; // now quantity (15) is within limit
-      expect(order.isValid).toBe(true);
+      expect(order.trakrIsValid).toBe(true);
       expect(order.validationMessages.has("quantity")).toBe(false);
     });
   });
@@ -248,9 +248,9 @@ describe("Dependency tracking", () => {
 
     it("produces correct result after cross-object dep change", () => {
       expense.amount = 50;
-      expect(expense.isValid).toBe(true);
+      expect(expense.trakrIsValid).toBe(true);
       budget.limit = 30;
-      expect(expense.isValid).toBe(false);
+      expect(expense.trakrIsValid).toBe(false);
       expect(expense.validationMessages.get("amount")).toBe("Over budget");
     });
 
@@ -314,11 +314,11 @@ describe("Dependency tracking", () => {
 
     it("produces correct result across a branch flip", () => {
       // useA=true, valueA=5 → valid
-      expect(model.isValid).toBe(true);
+      expect(model.trakrIsValid).toBe(true);
       model.useA = false; // switch to valueB branch (valueB=5) → still valid
-      expect(model.isValid).toBe(true);
+      expect(model.trakrIsValid).toBe(true);
       model.valueB = -1; // valueB now negative → invalid
-      expect(model.isValid).toBe(false);
+      expect(model.trakrIsValid).toBe(false);
     });
   });
 
@@ -351,15 +351,15 @@ describe("Dependency tracking", () => {
 
     it("produces correct result when a negative item is pushed", () => {
       items.push(-1);
-      expect(cart.isValid).toBe(false);
+      expect(cart.trakrIsValid).toBe(false);
       expect(cart.validationMessages.get("name")).toBe("Has negative item");
     });
 
     it("clears error when the negative item is removed", () => {
       items.push(-1);
-      expect(cart.isValid).toBe(false);
+      expect(cart.trakrIsValid).toBe(false);
       items.remove(-1);
-      expect(cart.isValid).toBe(true);
+      expect(cart.trakrIsValid).toBe(true);
     });
 
     it("does not re-run validator when an unrelated collection changes", () => {
@@ -419,21 +419,21 @@ describe("Dependency tracking", () => {
       model.sharedDep = 5; // 8 > 5 → both fields should now be invalid
       expect(model.validationMessages.get("field1")).toBe("field1 exceeds limit");
       expect(model.validationMessages.get("field2")).toBe("field2 exceeds limit");
-      expect(model.isValid).toBe(false);
+      expect(model.trakrIsValid).toBe(false);
     });
 
     it("clears errors for all dependent validators when dep change makes them valid", () => {
       model.sharedDep = 5;
       model.field1 = 8; // 8 > 5 → invalid
       model.field2 = 8; // 8 > 5 → invalid
-      expect(model.isValid).toBe(false);
+      expect(model.trakrIsValid).toBe(false);
       field1Calls = 0;
       field2Calls = 0;
 
       model.sharedDep = 20; // both fields now within limit
       expect(model.validationMessages.has("field1")).toBe(false);
       expect(model.validationMessages.has("field2")).toBe(false);
-      expect(model.isValid).toBe(true);
+      expect(model.trakrIsValid).toBe(true);
     });
   });
 
@@ -494,16 +494,16 @@ describe("Dependency tracking", () => {
 
     it("detects a negative value pushed via flat()", () => {
       matrix.push([-1, -2]);
-      expect(model.isValid).toBe(false);
+      expect(model.trakrIsValid).toBe(false);
       expect(model.validationMessages.get("name")).toBe("Has negative");
     });
 
     it("clears error when the negative row is removed", () => {
       const negativeRow = [-1, -2];
       matrix.push(negativeRow);
-      expect(model.isValid).toBe(false);
+      expect(model.trakrIsValid).toBe(false);
       matrix.remove(negativeRow);
-      expect(model.isValid).toBe(true);
+      expect(model.trakrIsValid).toBe(true);
     });
   });
 });
@@ -620,42 +620,42 @@ describe("Dependency tracking — integration", () => {
 
     it("restores valid state after undoing an invalid change", () => {
       model.value = 15;
-      expect(model.isValid).toBe(false);
+      expect(model.trakrIsValid).toBe(false);
       tracker.undo();
       expect(model.value).toBe(0);
-      expect(model.isValid).toBe(true);
+      expect(model.trakrIsValid).toBe(true);
     });
 
     it("restores invalid state after redoing the change", () => {
       model.value = 15;
       tracker.undo();
-      expect(model.isValid).toBe(true);
+      expect(model.trakrIsValid).toBe(true);
       tracker.redo();
       expect(model.value).toBe(15);
-      expect(model.isValid).toBe(false);
+      expect(model.trakrIsValid).toBe(false);
     });
 
     it("restores valid state after undoing a dep change that caused invalidity", () => {
       model.value = 8;
       model.limit = 5;
-      expect(model.isValid).toBe(false);
+      expect(model.trakrIsValid).toBe(false);
       tracker.undo();
       expect(model.limit).toBe(10);
-      expect(model.isValid).toBe(true);
+      expect(model.trakrIsValid).toBe(true);
     });
 
     it("preserves correct state through multiple undo/redo cycles", () => {
       model.value = 15;
       model.limit = 20;
-      expect(model.isValid).toBe(true);
+      expect(model.trakrIsValid).toBe(true);
       tracker.undo();
-      expect(model.isValid).toBe(false);
+      expect(model.trakrIsValid).toBe(false);
       tracker.undo();
-      expect(model.isValid).toBe(true);
+      expect(model.trakrIsValid).toBe(true);
       tracker.redo();
-      expect(model.isValid).toBe(false);
+      expect(model.trakrIsValid).toBe(false);
       tracker.redo();
-      expect(model.isValid).toBe(true);
+      expect(model.trakrIsValid).toBe(true);
     });
 
     it("tracker.isValid reflects model validity through undo/redo", () => {
@@ -714,9 +714,9 @@ describe("Dependency tracking — integration", () => {
     it("B produces correct validation state after A is destroyed", () => {
       depA.destroy();
       depB.amount = 3;
-      expect(depB.isValid).toBe(false);
+      expect(depB.trakrIsValid).toBe(false);
       src.value = 5;
-      expect(depB.isValid).toBe(true);
+      expect(depB.trakrIsValid).toBe(true);
     });
   });
 
@@ -726,29 +726,29 @@ describe("Dependency tracking — integration", () => {
       model.value = 5;
 
       model.limit = 3;
-      expect(model.isValid).toBe(false);
+      expect(model.trakrIsValid).toBe(false);
 
       model.limit = 10;
-      expect(model.isValid).toBe(true);
+      expect(model.trakrIsValid).toBe(true);
 
       model.limit = 4;
-      expect(model.isValid).toBe(false);
+      expect(model.trakrIsValid).toBe(false);
     });
 
     it("changing the validated property multiple times gives correct state each time", () => {
       const model = tracker.construct(() => new UndoModel(tracker));
 
       model.value = 5;
-      expect(model.isValid).toBe(true);
+      expect(model.trakrIsValid).toBe(true);
 
       model.value = 15;
-      expect(model.isValid).toBe(false);
+      expect(model.trakrIsValid).toBe(false);
 
       model.value = 8;
-      expect(model.isValid).toBe(true);
+      expect(model.trakrIsValid).toBe(true);
 
       model.value = 20;
-      expect(model.isValid).toBe(false);
+      expect(model.trakrIsValid).toBe(false);
     });
   });
 
@@ -758,9 +758,9 @@ describe("Dependency tracking — integration", () => {
         items.some((x) => x < 0) ? "Has negative" : undefined,
       );
 
-      expect(col.isValid).toBe(true);
+      expect(col.trakrIsValid).toBe(true);
       col.push(-1);
-      expect(col.isValid).toBe(false);
+      expect(col.trakrIsValid).toBe(false);
       expect(col.error).toBe("Has negative");
     });
 
@@ -771,7 +771,7 @@ describe("Dependency tracking — integration", () => {
 
       col.push(-1);
       col.remove(-1);
-      expect(col.isValid).toBe(true);
+      expect(col.trakrIsValid).toBe(true);
       expect(col.error).toBeUndefined();
     });
 
@@ -792,9 +792,9 @@ describe("Dependency tracking — integration", () => {
         items.length === 0 ? "Empty" : undefined,
       );
 
-      expect(col.isValid).toBe(true);
+      expect(col.trakrIsValid).toBe(true);
       col.reset([]);
-      expect(col.isValid).toBe(false);
+      expect(col.trakrIsValid).toBe(false);
       expect(col.error).toBe("Empty");
     });
   });
@@ -818,7 +818,7 @@ describe("Dependency tracking — integration", () => {
       sharedItems.push(-1);
       expect(m.validationMessages.get("nameA")).toBe("neg");
       expect(m.validationMessages.has("nameB")).toBe(false);
-      expect(m.isValid).toBe(false);
+      expect(m.trakrIsValid).toBe(false);
     });
 
     it("pushing 4 more items makes only nameB invalid", () => {
@@ -828,7 +828,7 @@ describe("Dependency tracking — integration", () => {
       sharedItems.push(3, 4, 5, 6);
       expect(m.validationMessages.has("nameA")).toBe(false);
       expect(m.validationMessages.get("nameB")).toBe("too many");
-      expect(m.isValid).toBe(false);
+      expect(m.trakrIsValid).toBe(false);
     });
   });
 
@@ -848,13 +848,13 @@ describe("Dependency tracking — integration", () => {
     });
 
     it("is valid initially when items.length <= threshold", () => {
-      expect(col.isValid).toBe(true);
+      expect(col.trakrIsValid).toBe(true);
       expect(col.error).toBeUndefined();
     });
 
     it("re-validates when threshold drops below items.length", () => {
       thresholdModel.threshold = 1; // items.length=2 > 1 → invalid
-      expect(col.isValid).toBe(false);
+      expect(col.trakrIsValid).toBe(false);
       expect(col.error).toBe("Too many");
     });
 
@@ -866,7 +866,7 @@ describe("Dependency tracking — integration", () => {
     it("re-validates when threshold rises above items.length again", () => {
       thresholdModel.threshold = 1; // invalid
       thresholdModel.threshold = 5; // valid again
-      expect(col.isValid).toBe(true);
+      expect(col.trakrIsValid).toBe(true);
       expect(col.error).toBeUndefined();
     });
 

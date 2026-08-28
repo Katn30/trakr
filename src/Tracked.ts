@@ -80,7 +80,7 @@ export function Tracked(
               accessorTarget.set.call(this, newValue);
               const tracked = this as unknown as ITracked;
               tracked.dirtyCounter++;
-              if (tracked.state === State.Unchanged) tracked._setState(State.Changed);
+              if (tracked.trakrState === State.Unchanged) tracked._setState(State.Changed);
               if (oldValue instanceof TrackedObject) oldValue._markRemoved();
               if (newValue instanceof TrackedObject) newValue._markAdded();
               if (!this.tracker._isReplaying && onChange) {
@@ -95,7 +95,7 @@ export function Tracked(
               accessorTarget.set.call(this, oldValue);
               const tracked = this as unknown as ITracked;
               tracked.dirtyCounter--;
-              if (tracked.dirtyCounter === 0 && tracked.state === State.Changed) tracked._setState(State.Unchanged);
+              if (tracked.dirtyCounter === 0 && tracked.trakrState === State.Changed) tracked._setState(State.Unchanged);
               this.changed.emit({ property: propertyName, oldValue: newValue, newValue: oldValue });
             },
             properties,
@@ -140,7 +140,7 @@ export function Tracked(
             setterFn.call(this, newValue);
             const tracked = this as unknown as ITracked;
             tracked.dirtyCounter++;
-            if (tracked.state === State.Unchanged) tracked._setState(State.Changed);
+            if (tracked.trakrState === State.Unchanged) tracked._setState(State.Changed);
             if (oldValue instanceof TrackedObject) oldValue._markRemoved();
             if (newValue instanceof TrackedObject) newValue._markAdded();
             this.changed.emit({ property: propertyName, oldValue, newValue });
@@ -152,7 +152,7 @@ export function Tracked(
             setterFn.call(this, oldValue);
             const tracked = this as unknown as ITracked;
             tracked.dirtyCounter--;
-            if (tracked.dirtyCounter === 0 && tracked.state === State.Changed) tracked._setState(State.Unchanged);
+            if (tracked.dirtyCounter === 0 && tracked.trakrState === State.Changed) tracked._setState(State.Unchanged);
             this.changed.emit({ property: propertyName, oldValue: newValue, newValue: oldValue });
           },
           properties,

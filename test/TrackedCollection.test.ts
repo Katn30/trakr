@@ -509,7 +509,7 @@ describe("TrackedCollection", () => {
 
   describe("validation", () => {
     it("is valid without a validator", () => {
-      expect(collection.isValid).toBe(true);
+      expect(collection.trakrIsValid).toBe(true);
       expect(collection.error).toBeUndefined();
     });
 
@@ -517,7 +517,7 @@ describe("TrackedCollection", () => {
       const c = new TrackedCollection<number>(tracker, [], (v) =>
         v.length === 0 ? "Required" : undefined,
       );
-      expect(c.isValid).toBe(false);
+      expect(c.trakrIsValid).toBe(false);
       expect(c.error).toBe("Required");
     });
 
@@ -526,7 +526,7 @@ describe("TrackedCollection", () => {
         v.length === 0 ? "Required" : undefined,
       );
       c.push(1);
-      expect(c.isValid).toBe(true);
+      expect(c.trakrIsValid).toBe(true);
       expect(c.error).toBeUndefined();
     });
 
@@ -656,22 +656,22 @@ describe("TrackedCollection — TrackedObject items get correct state on splice"
   it("item pushed to a collection is marked New", () => {
     const col = new TrackedCollection<SimpleItem>(tracker);
     const item = tracker.construct(() => new SimpleItem(tracker));
-    expect(item.state).toBe(State.Unchanged);
+    expect(item.trakrState).toBe(State.Unchanged);
 
     col.push(item);
 
-    expect(item.state).toBe(State.Insert);
+    expect(item.trakrState).toBe(State.Insert);
   });
 
   it("New item removed from a collection is marked Unchanged (treated as never existed)", () => {
     const col = new TrackedCollection<SimpleItem>(tracker);
     const item = tracker.construct(() => new SimpleItem(tracker));
     col.push(item); // → New
-    expect(item.state).toBe(State.Insert);
+    expect(item.trakrState).toBe(State.Insert);
 
     col.remove(item);
 
-    expect(item.state).toBe(State.Unchanged);
+    expect(item.trakrState).toBe(State.Unchanged);
     expect(tracker.trackedObjects).not.toContain(item);
   });
 
@@ -679,22 +679,22 @@ describe("TrackedCollection — TrackedObject items get correct state on splice"
     const item = tracker.construct(() => new SimpleItem(tracker));
     const col = new TrackedCollection<SimpleItem>(tracker, [item]);
     tracker.onCommit(); // item remains Unchanged, collection is clean
-    expect(item.state).toBe(State.Unchanged);
+    expect(item.trakrState).toBe(State.Unchanged);
 
     col.splice(0, 1); // remove the item
 
-    expect(item.state).toBe(State.Deleted);
+    expect(item.trakrState).toBe(State.Deleted);
   });
 
   it("undo of a push restores item state to Unchanged", () => {
     const col = new TrackedCollection<SimpleItem>(tracker);
     const item = tracker.construct(() => new SimpleItem(tracker));
     col.push(item);
-    expect(item.state).toBe(State.Insert);
+    expect(item.trakrState).toBe(State.Insert);
 
     tracker.undo();
 
-    expect(item.state).toBe(State.Unchanged);
+    expect(item.trakrState).toBe(State.Unchanged);
   });
 
   it("undo of a removal restores committed item state to Deleted", () => {
@@ -702,11 +702,11 @@ describe("TrackedCollection — TrackedObject items get correct state on splice"
     const col = new TrackedCollection<SimpleItem>(tracker, [item]);
     tracker.onCommit();
     col.splice(0, 1); // → Deleted
-    expect(item.state).toBe(State.Deleted);
+    expect(item.trakrState).toBe(State.Deleted);
 
     tracker.undo();
 
-    expect(item.state).toBe(State.Unchanged);
+    expect(item.trakrState).toBe(State.Unchanged);
   });
 });
 
@@ -730,7 +730,7 @@ describe("TrackedCollection — Insert-remove untracks the item", () => {
     const item = tracker.construct(() => new RequiredNameItem(tracker));
     col.push(item);
 
-    expect(item.isValid).toBe(false);
+    expect(item.trakrIsValid).toBe(false);
     expect(tracker.isValid).toBe(false);
 
     col.remove(item);
@@ -749,7 +749,7 @@ describe("TrackedCollection — Insert-remove untracks the item", () => {
     tracker.undo();
 
     expect(tracker.trackedObjects).toContain(item);
-    expect(item.state).toBe(State.Insert);
+    expect(item.trakrState).toBe(State.Insert);
     expect(tracker.isValid).toBe(false);
   });
 
@@ -775,7 +775,7 @@ describe("TrackedCollection — Insert-remove untracks the item", () => {
     tracker.redo();
 
     expect(tracker.trackedObjects).toContain(item);
-    expect(item.state).toBe(State.Insert);
+    expect(item.trakrState).toBe(State.Insert);
     expect(tracker.isValid).toBe(false);
   });
 

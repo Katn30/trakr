@@ -53,11 +53,11 @@ export abstract class TrackedContainer extends TrackedObject {
     if (idx >= 0) this._children.splice(idx, 1);
   }
 
-  override get isValid(): boolean {
-    return super.isValid && this._children.every(c => c.isValid);
+  override get trakrIsValid(): boolean {
+    return super.trakrIsValid && this._children.every(c => c.trakrIsValid);
   }
 
-  override set isValid(value: boolean) {
+  override set trakrIsValid(value: boolean) {
     this._setIsValid(value);
   }
 

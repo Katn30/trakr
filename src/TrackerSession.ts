@@ -71,7 +71,7 @@ export class TrackerSession implements ITrackerContext {
   }
 
   get deletedObjects(): TrackedObject[] {
-    return this.trackedObjects.filter(obj => obj.state === State.Deleted);
+    return this.trackedObjects.filter(obj => obj.trakrState === State.Deleted);
   }
 
   undo(): void {

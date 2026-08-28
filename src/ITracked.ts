@@ -5,7 +5,7 @@ export interface ITracked {
   tracker: Tracker;
   isDirty: boolean;
   dirtyCounter: number;
-  state: State;
+  trakrState: State;
 
   /** @internal */
   _setState(value: State): void;

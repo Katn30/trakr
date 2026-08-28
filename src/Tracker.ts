@@ -39,7 +39,7 @@ export class Tracker implements ITrackerContext {
   public readonly trackedObjects: TrackedObject[] = [];
 
   public get deletedObjects(): TrackedObject[] {
-    return this.trackedObjects.filter(obj => obj.state === State.Deleted);
+    return this.trackedObjects.filter(obj => obj.trakrState === State.Deleted);
   }
 
   public readonly trackedCollections: TrackedCollection<any>[] = [];
@@ -139,7 +139,7 @@ export class Tracker implements ITrackerContext {
   /** @internal */
   public _untrackObject(trackedObject: TrackedObject) {
     this.trackedObjects.splice(this.trackedObjects.indexOf(trackedObject), 1);
-    if (!trackedObject.isValid) this._invalidCount--;
+    if (!trackedObject.trakrIsValid) this._invalidCount--;
     this.isValid = this._invalidCount === 0;
   }
 
@@ -154,7 +154,7 @@ export class Tracker implements ITrackerContext {
       this.trackedCollections.indexOf(trackedCollection),
       1,
     );
-    if (!trackedCollection.isValid) this._invalidCount--;
+    if (!trackedCollection.trakrIsValid) this._invalidCount--;
     this.isValid = this._invalidCount === 0;
   }
 
@@ -355,7 +355,7 @@ export class Tracker implements ITrackerContext {
   }
 
   public getByTrackingId(trackingId: number): TrackedObject | undefined {
-    return this.trackedObjects.find((o) => o.trackingId === trackingId);
+    return this.trackedObjects.find((o) => o.trakrId === trackingId);
   }
 
   /** @internal */

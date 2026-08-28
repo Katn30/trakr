@@ -21,7 +21,7 @@ export abstract class TrackedObject implements ITracked, StateTarget {
   private _isValid: boolean = true;
   private _state: State = State.Unchanged;
 
-  public readonly trackingId: number;
+  public readonly trakrId: number;
 
   public readonly changed: TypedEvent<TrackedPropertyChanged> = new TypedEvent<TrackedPropertyChanged>();
   public readonly trackedChanged: TypedEvent<TrackedPropertyChanged> = new TypedEvent<TrackedPropertyChanged>();
@@ -29,7 +29,7 @@ export abstract class TrackedObject implements ITracked, StateTarget {
   // ---- StateTarget interface (internal) ----
 
   /** @internal */
-  get state(): State {
+  get trakrState(): State {
     return this._state;
   }
 
@@ -57,7 +57,7 @@ export abstract class TrackedObject implements ITracked, StateTarget {
     this._validationMessages = value;
   }
 
-  public get isValid(): boolean {
+  public get trakrIsValid(): boolean {
     return this._isValid;
   }
   protected _setIsValid(value: boolean): void {
@@ -67,7 +67,7 @@ export abstract class TrackedObject implements ITracked, StateTarget {
       this.tracker._onValidityChanged(wasValid, value);
     }
   }
-  protected set isValid(value: boolean) {
+  protected set trakrIsValid(value: boolean) {
     this._setIsValid(value);
   }
 
@@ -86,7 +86,7 @@ export abstract class TrackedObject implements ITracked, StateTarget {
     if (process.env.NODE_ENV !== 'production' && !tracker._isConstructing) {
       throw new Error(`${this.constructor.name} must be created inside tracker.construct()`);
     }
-    this.trackingId = tracker._nextTrackingId();
+    this.trakrId = tracker._nextTrackingId();
     this.validationMessages = new Map<string, string>();
     tracker._trackObject(this);
   }
@@ -160,13 +160,13 @@ export abstract class TrackedObject implements ITracked, StateTarget {
       this.validationMessages.delete(property);
     }
     this.validationMessages = new Map(this.validationMessages);
-    this.isValid = this.validationMessages.size === 0;
+    this.trakrIsValid = this.validationMessages.size === 0;
   }
 
   /** @internal */
   public _applyValidation(messages: Map<string, string>): void {
     this.validationMessages = messages;
-    this.isValid = messages.size === 0;
+    this.trakrIsValid = messages.size === 0;
   }
 
   public destroy(): void {

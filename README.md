@@ -55,7 +55,7 @@ class InvoiceModel extends TrackedObject {
 
 const invoices = new TrackedCollection<InvoiceModel>(tracker);
 const invoice = tracker.construct(() => new InvoiceModel(tracker));
-invoices.push(invoice);        // state: Insert, trackingId: 1
+invoices.push(invoice);        // trakrState: Insert, trakrId: 1
 
 invoice.status = 'draft';     // recorded
 invoice.total = 100;          // recorded
@@ -371,13 +371,13 @@ trakr runs validators automatically — you never call them directly. They run:
 
 Results are stored per-property in `model.validationMessages: Map<string, string>` and aggregated into:
 
-- `model.isValid: boolean` — `true` when all validators on this model pass
+- `model.trakrIsValid: boolean` — `true` when all validators on this model pass
 - `tracker.isValid: boolean` — `true` when every model and collection passes
 - `tracker.canCommit: boolean` — `true` when `isDirty && isValid`
 
 `tracker.isValidChanged` and `tracker.canCommitChanged` fire whenever these values change, so UI can bind directly to them without polling.
 
-**Collection validators** are a separate function passed as the third argument to the `TrackedCollection` constructor. They receive the full array and return an error string or `undefined`. The result is exposed on `collection.error` and `collection.isValid`, and rolls up into `tracker.isValid`. Collection validators participate in the same cross-object dependency tracking as scalar validators — if the validator reads a `@Tracked` property on another object, the validator re-runs automatically when that property changes.
+**Collection validators** are a separate function passed as the third argument to the `TrackedCollection` constructor. They receive the full array and return an error string or `undefined`. The result is exposed on `collection.error` and `collection.trakrIsValid`, and rolls up into `tracker.isValid`. Collection validators participate in the same cross-object dependency tracking as scalar validators — if the validator reads a `@Tracked` property on another object, the validator re-runs automatically when that property changes.
 
 ```typescript
 const items = new TrackedCollection<string>(
@@ -386,9 +386,9 @@ const items = new TrackedCollection<string>(
   (list) => list.length === 0 ? 'At least one item is required' : undefined,
 );
 
-items.isValid; // false — empty
+items.trakrIsValid; // false — empty
 items.push('a');
-items.isValid; // true
+items.trakrIsValid; // true
 ```
 
 ### Object construction
@@ -537,7 +537,7 @@ State transitions respect tracking suppression. Inside `tracker.construct()` and
 
 ### Object state machine
 
-Every `TrackedObject` has a `state: State` property — the single source of truth for what the save layer needs to do with that object. State transitions are driven by three types of events:
+Every `TrackedObject` has a `trakrState: State` property — the single source of truth for what the save layer needs to do with that object. State transitions are driven by three types of events:
 
 - **edit** — a `@Tracked` property is written
 - **collection mutation** — the object is pushed to or removed from a `TrackedCollection`
@@ -574,9 +574,9 @@ There is no separate redo transition. Redo simply re-runs the original `do` acti
 
 **`committed/undo` reverses the server operation** — undoing past a commit puts the object into the state that requires the inverse server operation. Undoing a committed INSERT requires a DELETE; undoing a committed DELETE requires a new INSERT; undoing a committed UPDATE requires another UPDATE with the pre-edit values.
 
-**`@AutoId` is never zeroed out** — when `committed/undo` runs after a committed INSERT, the real server id stays on the `@AutoId` field so the save layer can send `DELETE /resource/{id}`. Similarly, after `committed/undo` of a DELETE, the `@AutoId` field still holds the old real id — but since `state` is now `Insert`, the save layer must use `trackingId` to identify the item in the POST payload, not `@AutoId`.
+**`@AutoId` is never zeroed out** — when `committed/undo` runs after a committed INSERT, the real server id stays on the `@AutoId` field so the save layer can send `DELETE /resource/{id}`. Similarly, after `committed/undo` of a DELETE, the `@AutoId` field still holds the old real id — but since `trakrState` is now `Insert`, the save layer must use `trakrId` to identify the item in the POST payload, not `@AutoId`.
 
-**`trackingId` for `Insert` and `Changed` items** — `trackingId` is assigned at construction and never changes. Include it in the save payload for `Insert` and `Changed` items so the backend can echo back the new server-assigned PK for each. See [Recommended save pattern](#recommended-save-pattern) and [Temporally versioned tables](#temporally-versioned-tables) for usage.
+**`trakrId` for `Insert` and `Changed` items** — `trakrId` is assigned at construction and never changes. Include it in the save payload for `Insert` and `Changed` items so the backend can echo back the new server-assigned PK for each. See [Recommended save pattern](#recommended-save-pattern) and [Temporally versioned tables](#temporally-versioned-tables) for usage.
 
 ### Recommended save pattern
 
@@ -584,9 +584,9 @@ trakr does not mandate a specific save strategy — you can send changes per-obj
 
 That said, a pattern that works well with trakr's design is **all-or-nothing saves**: when the user clicks Save, the frontend collects every dirty object across the tracker, serialises them into a single request, and the backend saves everything inside one transaction — either succeeding fully or returning an error without applying partial changes. The frontend then calls `tracker.onCommit()` only on success.
 
-Every `TrackedObject` has a `trackingId` — a positive integer assigned at construction time, stable for the lifetime of the object, unique across the tracker. Include `trackingId` in the save payload for `Insert` and `Changed` items. The backend echoes it back alongside the server-assigned PK for any item that produced a new row. `onCommit(keys)` then iterates every entry in `keys`, matches by `trackingId`, and writes the real PK to the `@AutoId` field of any match — regardless of whether the item was `Insert` or `Changed`.
+Every `TrackedObject` has a `trakrId` — a positive integer assigned at construction time, stable for the lifetime of the object, unique across the tracker. Include `trakrId` in the save payload for `Insert` and `Changed` items. The backend echoes it back alongside the server-assigned PK for any item that produced a new row. `onCommit(keys)` then iterates every entry in `keys`, matches by `trakrId`, and writes the real PK to the `@AutoId` field of any match — regardless of whether the item was `Insert` or `Changed`.
 
-New objects can reference each other via their `trackingId` in the payload (e.g. a new parent and its new children share consistent temp IDs before the server assigns real ones). After a successful save, `tracker.onCommit(keys)` updates all matched objects in place — no page reload is needed. This is the intended experience for form-heavy back-office pages, though reloading or restructuring state on save is equally valid.
+New objects can reference each other via their `trakrId` in the payload (e.g. a new parent and its new children share consistent temp IDs before the server assigns real ones). After a successful save, `tracker.onCommit(keys)` updates all matched objects in place — no page reload is needed. This is the intended experience for form-heavy back-office pages, though reloading or restructuring state on save is equally valid.
 
 **On failure, do not call `onCommit()`.**
 
@@ -640,17 +640,17 @@ tracker.onCommit(keys);       // same, plus write real server IDs to @AutoId fie
 
 `onCommit(keys?)` does three things:
 
-1. Iterates every entry in `keys`. For each entry it finds a tracked object whose `trackingId` matches `entry.trackingId` and writes `entry.value` to its `@AutoId` field. This applies to both `Insert` items (new rows) and `Changed` items (e.g. temporal tables where an update produces a new row with a new PK).
-2. Transitions every tracked object's `state` to `Unchanged` and resets `dirtyCounter`.
+1. Iterates every entry in `keys`. For each entry it finds a tracked object whose `trakrId` matches `entry.trackingId` and writes `entry.value` to its `@AutoId` field. This applies to both `Insert` items (new rows) and `Changed` items (e.g. temporal tables where an update produces a new row with a new PK).
+2. Transitions every tracked object's `trakrState` to `Unchanged` and resets `dirtyCounter`.
 3. Appends the state change into the existing last undo operation — so undo atomically reverts both the user's edits and the committed state together (no spurious extra undo steps).
 
-**Lookup by trackingId**
+**Lookup by trakrId**
 
 ```typescript
 const obj = tracker.getByTrackingId(42);   // TrackedObject | undefined
 ```
 
-Returns the tracked object whose `trackingId` matches the given value, or `undefined` if none. Deleted objects are still findable this way (they remain in `trackedObjects` until `destroy()`). Useful for debugging, correlating server responses against known objects, or hydrating a UI selection from a persisted `trackingId`.
+Returns the tracked object whose `trakrId` matches the given value, or `undefined` if none. Deleted objects are still findable this way (they remain in `trackedObjects` until `destroy()`). Useful for debugging, correlating server responses against known objects, or hydrating a UI selection from a persisted `trakrId`.
 
 **Sessions**
 
@@ -761,11 +761,11 @@ const invoice = tracker.construct(() => new InvoiceModel(tracker));
 | Member | Type | Description |
 |---|---|---|
 | `tracker` | `Tracker` | The tracker this model belongs to (set via `super(tracker)`) |
-| `state` | `State` | The current persistence state — `Unchanged`, `Insert`, `Changed`, or `Deleted` |
-| `trackingId` | `number` | Positive client-assigned identifier, unique across the tracker, set at construction and never changed. Include in the save payload for `Insert` and `Changed` items so the backend can return the new server PK |
+| `trakrState` | `State` | The current persistence state — `Unchanged`, `Insert`, `Changed`, or `Deleted` |
+| `trakrId` | `number` | Positive client-assigned identifier, unique across the tracker, set at construction and never changed. Include in the save payload for `Insert` and `Changed` items so the backend can return the new server PK |
 | `isDirty` | `boolean` | `true` when this model has uncommitted property changes |
 | `dirtyCounter` | `number` | Net count of uncommitted property writes. Increments on each write, decrements on undo. Reset to `0` by `onCommit()`. Can be negative after undoing past a committed save |
-| `isValid` | `boolean` | `true` when all `@Tracked()` validators pass |
+| `trakrIsValid` | `boolean` | `true` when all `@Tracked()` validators pass |
 | `validationMessages` | `Map<string, string>` | Maps property name → error message for each failing validator |
 | `changed` | `TypedEvent<TrackedPropertyChanged>` | Fires on every property change, including changes triggered by undo and redo |
 | `trackedChanged` | `TypedEvent<TrackedPropertyChanged>` | Fires only on direct user-initiated writes — never during undo or redo |
@@ -812,7 +812,7 @@ this.trackedChanged.subscribe(({ property, newValue }) => {
 
 ### `State`
 
-Read via `obj.state`.
+Read via `obj.trakrState`.
 
 ```typescript
 import { State } from '@katn30/trakr';
@@ -840,12 +840,12 @@ class InvoiceModel extends TrackedObject {
   }
 }
 
-const invoice = tracker.construct(() => new InvoiceModel(tracker, { status: 'active' })); // state: Unchanged
+const invoice = tracker.construct(() => new InvoiceModel(tracker, { status: 'active' })); // trakrState: Unchanged
 ```
 
 **Saving:**
 
-Iterate `tracker.trackedObjects`, read `state` and the appropriate ID on each model, and call `tracker.onCommit()` after the server responds successfully.
+Iterate `tracker.trackedObjects`, read `trakrState` and the appropriate ID on each model, and call `tracker.onCommit()` after the server responds successfully.
 
 > **Why `tracker.trackedObjects` and not your own model tree?**
 > Deleted objects are no longer reachable through your model graph — a `TrackedCollection` removes them from its array, and a `@Tracked` property set to `null` (or replaced with another object) removes the reference. The tracker holds every registered object regardless of its state, so iterating `trackedObjects` is the only way to reach objects that need a DELETE request. `tracker.deletedObjects` is a convenience getter for the deleted subset only, but both approaches work.
@@ -882,12 +882,12 @@ const invoices = new TrackedCollection<InvoiceModel>(tracker);
 const newInvoice = tracker.construct(() => new InvoiceModel(tracker));
 invoices.push(newInvoice);
 newInvoice.status = 'pending';
-// newInvoice.trackingId === 3  (assigned at construction, never changes)
-// newInvoice.id         === 0  (untouched by the library until onCommit)
+// newInvoice.trakrId === 3  (assigned at construction, never changes)
+// newInvoice.id      === 0  (untouched by the library until onCommit)
 
 // --- Save ---
 
-// Build the payload by reading each object's state
+// Build the payload by reading each object's trakrState
 const payload: {
   inserts: { trackingId: number; status: string }[];
   updates: { trackingId: number; id: number; status: string }[];
@@ -896,13 +896,13 @@ const payload: {
 
 for (const obj of tracker.trackedObjects) {
   if (!(obj instanceof InvoiceModel)) continue;
-  switch (obj.state) {
+  switch (obj.trakrState) {
     case State.Insert:
-      // Send trackingId so the backend can echo back the new server PK
-      payload.inserts.push({ trackingId: obj.trackingId, status: obj.status });
+      // Send trakrId so the backend can echo back the new server PK
+      payload.inserts.push({ trackingId: obj.trakrId, status: obj.status });
       break;
     case State.Changed:
-      payload.updates.push({ trackingId: obj.trackingId, id: obj.id, status: obj.status });
+      payload.updates.push({ trackingId: obj.trakrId, id: obj.id, status: obj.status });
       break;
     case State.Deleted:
       payload.deletes.push({ id: obj.id });
@@ -918,7 +918,7 @@ const response = await api.save(payload);
 
 // Apply real IDs and mark everything clean — no page reload needed
 tracker.onCommit(response.ids);
-// newInvoice.id === 42, state === Unchanged
+// newInvoice.id === 42, trakrState === Unchanged
 // tracker.isDirty === false
 
 // When no new PKs were assigned, keys can be omitted:
@@ -947,20 +947,20 @@ class InvoiceModel extends TrackedObject {
 }
 ```
 
-The `@AutoId` field is left at its initial value until `onCommit(keys)` writes the real server ID. The save layer identifies items that need a new PK via `trackingId` — a stable, positive integer assigned at construction and never changed. Include `trackingId` in the save payload for `Insert` (and `Changed`, for temporal tables) items; the backend returns it alongside the new PK.
+The `@AutoId` field is left at its initial value until `onCommit(keys)` writes the real server ID. The save layer identifies items that need a new PK via `trakrId` — a stable, positive integer assigned at construction and never changed. Include `trakrId` in the save payload for `Insert` (and `Changed`, for temporal tables) items; the backend returns it alongside the new PK.
 
 **Typical save flow:**
 
 ```typescript
 const invoice = tracker.construct(() => new InvoiceModel(tracker));
 invoices.push(invoice);
-// invoice.trackingId === 1  (assigned at construction, never changes)
-// invoice.id         === 0  (untouched by the library)
+// invoice.trakrId === 1  (assigned at construction, never changes)
+// invoice.id      === 0  (untouched by the library)
 
 invoice.status = 'draft';
 
-// 1. Build payload — send trackingId for Insert items:
-const serverIds = [{ trackingId: invoice.trackingId, value: 42 }];
+// 1. Build payload — send trakrId for Insert items:
+const serverIds = [{ trackingId: invoice.trakrId, value: 42 }];
 
 // 2. Send to server, receive real IDs back.
 
@@ -972,9 +972,9 @@ tracker.onCommit(serverIds);
 
 `onCommit()` with no arguments (or an empty array) still marks the tracker as clean — it just skips the ID replacement step.
 
-`trackingId` values are globally unique across the lifetime of the tracker and never reused, so they can safely serve as correlation keys across multiple save cycles.
+`trakrId` values are globally unique across the lifetime of the tracker and never reused, so they can safely serve as correlation keys across multiple save cycles.
 
-**Reactivity gate.** The `@AutoId` write performed by `onCommit(keys)` is a **library-internal write, not a user edit**. It does **not** fire `TrackedObject.changed` for the `@AutoId` property, does **not** bump `dirtyCounter`, does **not** re-run `@Tracked` validators, and does **not** flicker `tracker.isDirty` back to `true` during commit. After `onCommit` returns, `state === Unchanged` and `isDirty === false` — as if the object were freshly loaded with the real PK. Treat the write as *authoritative baseline update*, not as a change event.
+**Reactivity gate.** The `@AutoId` write performed by `onCommit(keys)` is a **library-internal write, not a user edit**. It does **not** fire `TrackedObject.changed` for the `@AutoId` property, does **not** bump `dirtyCounter`, does **not** re-run `@Tracked` validators, and does **not** flicker `tracker.isDirty` back to `true` during commit. After `onCommit` returns, `trakrState === Unchanged` and `isDirty === false` — as if the object were freshly loaded with the real PK. Treat the write as *authoritative baseline update*, not as a change event.
 
 ---
 
@@ -1023,7 +1023,7 @@ The common interface implemented by both `TrackedObject` and `TrackedCollection`
 import { ITracked } from '@katn30/trakr';
 
 function isReady(item: ITracked): boolean {
-  return item.isDirty && item.isValid;
+  return item.isDirty && item.trakrIsValid;
 }
 ```
 
@@ -1032,7 +1032,7 @@ function isReady(item: ITracked): boolean {
 | `tracker` | `Tracker` | The tracker this object belongs to |
 | `isDirty` | `boolean` | `true` when there are uncommitted changes |
 | `dirtyCounter` | `number` | Net count of uncommitted writes |
-| `state` | `State` | Current persistence state (always `Unchanged` for collections) |
+| `trakrState` | `State` | Current persistence state (always `Unchanged` for collections) |
 | `destroy()` | `void` | Removes this object from the tracker |
 
 ---
@@ -1051,12 +1051,12 @@ const uuidKeys:    IdAssignment<string>[]   = [{ trackingId: 1, value: '01HXYZ-U
 
 | Field | Type | Description |
 |---|---|---|
-| `trackingId` | `number` | The `trackingId` of the object that received a new server-assigned PK |
+| `trackingId` | `number` | The `trakrId` of the object that received a new server-assigned PK |
 | `value` | `V` (default `number`) | The real server-assigned ID to write to the `@AutoId` field |
 
 `tracker.onCommit<V>(keys)` is generic in `V`: pass `IdAssignment<string>[]` for UUID/ULID schemas, `IdAssignment[]` for the numeric default. Trakr writes `entry.value` straight into the `@AutoId` field — the field's declared type is what enforces the match at the call site (e.g. `@AutoId id: string = ''` with `onCommit<string>(...)`).
 
-The server returns one `IdAssignment` per item that produced a new database row — both inserted objects and, in temporal tables, updated objects (see [Temporally versioned tables](#temporally-versioned-tables)). `onCommit()` iterates every entry, matches by `trackingId` against every tracked object, and writes `value` to the `@AutoId` field of any match.
+The server returns one `IdAssignment` per item that produced a new database row — both inserted objects and, in temporal tables, updated objects (see [Temporally versioned tables](#temporally-versioned-tables)). `onCommit()` iterates every entry, matches by `trakrId` against every tracked object, and writes `value` to the `@AutoId` field of any match.
 
 ---
 
@@ -1368,11 +1368,11 @@ const tracker = new Tracker();
 const sub = tracker.construct(() => new SubtaskDraft(tracker));      // name='' → invalid
 const section = tracker.construct(() => new ActionsSection(tracker, sub));
 
-section.isValid;    // false — sub.name is '' (invalid)
+section.trakrIsValid;    // false — sub.name is '' (invalid)
 sub.name = 'Fix the bug';
-section.isValid;    // false — own owner field is still ''
+section.trakrIsValid;    // false — own owner field is still ''
 section.owner = 'Alice';
-section.isValid;    // true  — both own field and child are now valid
+section.trakrIsValid;    // true  — both own field and child are now valid
 ```
 
 **Example: section owns a collection of sub-items**
@@ -1405,17 +1405,17 @@ const subtasks = new TrackedCollection<SubtaskDraft>(tracker);
 const section  = tracker.construct(() => new ActionsSection(tracker, subtasks));
 
 section.owner = 'Alice';
-section.isValid;    // true  — own field valid, no items yet
+section.trakrIsValid;    // true  — own field valid, no items yet
 
 const sub = tracker.construct(() => new SubtaskDraft(tracker)); // name='' → invalid
 subtasks.push(sub);
-section.isValid;    // false — sub.name is '' (item is tracked automatically on push)
+section.trakrIsValid;    // false — sub.name is '' (item is tracked automatically on push)
 
 sub.name = 'Fix the bug';
-section.isValid;    // true  — all own fields and all items are now valid
+section.trakrIsValid;    // true  — all own fields and all items are now valid
 
 subtasks.remove(sub);
-section.isValid;    // true  — invalid item removed, nothing left to fail
+section.trakrIsValid;    // true  — invalid item removed, nothing left to fail
 ```
 
 **`protected trackChild(child)`**
@@ -1424,11 +1424,11 @@ Registers a `TrackedObject` or `TrackedCollection` as a child. Call it from the 
 
 When `child` is a **`TrackedCollection`**, `trackChild` does three things automatically:
 
-1. Registers the collection itself (so its own validator, if any, contributes to `isValid`).
+1. Registers the collection itself (so its own validator, if any, contributes to `trakrIsValid`).
 2. Registers every `TrackedObject` already inside the collection as a child.
 3. Subscribes to `collection.changed` so that items pushed in later are added to tracking and items removed are dropped from tracking — including across undo and redo.
 
-This means item-level validity and dirty state propagate to the container without any extra wiring: an invalid item anywhere in a registered collection makes `container.isValid` false, and fixing that item makes it true again.
+This means item-level validity and dirty state propagate to the container without any extra wiring: an invalid item anywhere in a registered collection makes `container.trakrIsValid` false, and fixing that item makes it true again.
 
 **`protected untrackChild(child)`**
 
@@ -1439,12 +1439,12 @@ Removes a previously registered child. The symmetric counterpart to `trackChild`
 
 Calling `untrackChild` on a child that was never registered is a no-op.
 
-**`isValid`**
+**`trakrIsValid`**
 
 Returns `true` when all of the following hold:
 
 - Every `@Tracked` validator on the container's own fields passes
-- Every registered child's `isValid` is `true`
+- Every registered child's `trakrIsValid` is `true`
 
 This is a per-object read — it does not affect `tracker.isValid`, which is already correct because each child calls `tracker._onValidityChanged` independently.
 
@@ -1457,10 +1457,10 @@ Returns `true` when:
 
 **Multi-level trees: `TrackedContainer` must be used at every intermediate node**
 
-`container.isValid` checks each registered child by calling `child.isValid`. What that call returns depends on what `child` is:
+`container.trakrIsValid` checks each registered child by calling `child.trakrIsValid`. What that call returns depends on what `child` is:
 
-- If `child` is a **`TrackedContainer`**, `child.isValid` also walks *its* registered children — and so on down the tree. Invalidity at any leaf propagates upward automatically.
-- If `child` is a plain **`TrackedObject`**, `child.isValid` reflects only that object's own `@Tracked` validators — its children (if any) are invisible to the parent container.
+- If `child` is a **`TrackedContainer`**, `child.trakrIsValid` also walks *its* registered children — and so on down the tree. Invalidity at any leaf propagates upward automatically.
+- If `child` is a plain **`TrackedObject`**, `child.trakrIsValid` reflects only that object's own `@Tracked` validators — its children (if any) are invisible to the parent container.
 
 This means every intermediate node in the tree must extend `TrackedContainer` and register its own children, or validity will not propagate past that node.
 
@@ -1493,22 +1493,22 @@ This means every intermediate node in the tree must extend `TrackedContainer` an
   MainSection (TrackedObject)             ← plain — does NOT compose children
     └── (owns analysisBlock but never calls trackChild)
 
-  AnalysisBlock (TrackedContainer)        ← never reached by IssueForm.isValid
+  AnalysisBlock (TrackedContainer)        ← never reached by IssueForm.trakrIsValid
     └── @Tracked accessor summary = ''   ← this invalidity is invisible
 ```
 
-In the broken example, `issueForm.isValid` calls `mainSection.isValid`, which returns `mainSection._isValid` (own fields only). `AnalysisBlock` is never consulted. A required `summary` field staying empty will not prevent a save.
+In the broken example, `issueForm.trakrIsValid` calls `mainSection.trakrIsValid`, which returns `mainSection._isValid` (own fields only). `AnalysisBlock` is never consulted. A required `summary` field staying empty will not prevent a save.
 
 The fix is to make `MainSection` a `TrackedContainer` and add `this.trackChild(analysisBlock)` in its constructor.
 
 **When to use `TrackedContainer` vs reading `tracker.isValid`**
 
-`tracker.isValid` aggregates validity across the entire tracker — all models, all collections. `TrackedContainer.isValid` gives a per-section validity that you can bind directly to a UI element (an error badge, a "section incomplete" indicator) without scanning the whole tracker.
+`tracker.isValid` aggregates validity across the entire tracker — all models, all collections. `TrackedContainer.trakrIsValid` gives a per-section validity that you can bind directly to a UI element (an error badge, a "section incomplete" indicator) without scanning the whole tracker.
 
 ```typescript
 // Drive a section error badge in React
 useTrackerVersion(tracker);
-return <SectionHeader hasError={!section.isValid} />;
+return <SectionHeader hasError={!section.trakrIsValid} />;
 ```
 
 ---
@@ -1546,7 +1546,7 @@ Some databases never modify or delete rows in place. Instead, each row carries a
 
 Because every update produces a new database row with a new auto-increment PK, the `@AutoId` field on a `Changed` object becomes stale after a successful save: the old row it pointed to has been closed, and the new row carries a different PK. The model must be updated with the new PK before the next save, otherwise the save layer would try to close the wrong row.
 
-trakr handles this through `trackingId` and `onCommit`. The save flow for temporal tables is the same as the standard flow — the only difference is that the backend also returns `{ trackingId, value }` entries for `Changed` items (not just `Insert` items), and `onCommit(keys)` writes the new PK to those objects too.
+trakr handles this through `trakrId` and `onCommit`. The save flow for temporal tables is the same as the standard flow — the only difference is that the backend also returns `{ trackingId, value }` entries for `Changed` items (not just `Insert` items), and `onCommit(keys)` writes the new PK to those objects too.
 
 ### The problem
 
@@ -1563,14 +1563,14 @@ Next save:     tries to close row 10 → wrong row
 
 ### The solution
 
-Include `trackingId` in the payload for `Changed` items. The backend returns `{ trackingId, value }` for every item that produced a new row — inserts and temporal updates alike. `onCommit(keys)` writes the new PK to the `@AutoId` field of every matched object.
+Include `trakrId` in the payload for `Changed` items. The backend returns `{ trackingId, value }` for every item that produced a new row — inserts and temporal updates alike. `onCommit(keys)` writes the new PK to the `@AutoId` field of every matched object.
 
 ```
-Before save:   obj.trackingId = 3, obj.id = 10
+Before save:   obj.trakrId = 3, obj.id = 10
 Payload:       { trackingId: 3, id: 10, ...fields }
 Backend:       closes row 10, inserts row 99, echoes { trackingId: 3, value: 99 }
 onCommit:      writes 99 to obj.id
-After save:    obj.id = 99   (correct, open row), state = Unchanged
+After save:    obj.id = 99   (correct, open row), trakrState = Unchanged
 ```
 
 ### Full example
@@ -1595,13 +1595,13 @@ const tracker = new Tracker();
 // Load existing rows from the server
 const rule = tracker.construct(() => new RuleModel(tracker));
 tracker.withTrackingSuppressed(() => { rule.id = 10; });
-// rule.state       === Unchanged
-// rule.trackingId  === 1   (assigned at construction)
-// rule.id          === 10  (real server PK)
+// rule.trakrState === Unchanged
+// rule.trakrId    === 1   (assigned at construction)
+// rule.id         === 10  (real server PK)
 
 // User edits a value
 rule.value = '24h';
-// rule.state === Changed
+// rule.trakrState === Changed
 
 // --- Save ---
 
@@ -1613,13 +1613,13 @@ const payload = {
 
 for (const obj of tracker.trackedObjects) {
   if (!(obj instanceof RuleModel)) continue;
-  switch (obj.state) {
+  switch (obj.trakrState) {
     case State.Insert:
-      payload.inserts.push({ trackingId: obj.trackingId, value: obj.value });
+      payload.inserts.push({ trackingId: obj.trakrId, value: obj.value });
       break;
     case State.Changed:
-      // Send both trackingId (to correlate the response) and id (to close the right row)
-      payload.changes.push({ trackingId: obj.trackingId, id: obj.id, value: obj.value });
+      // Send both trakrId (to correlate the response) and id (to close the right row)
+      payload.changes.push({ trackingId: obj.trakrId, id: obj.id, value: obj.value });
       break;
     case State.Deleted:
       payload.deletes.push({ id: obj.id });
@@ -1631,10 +1631,10 @@ for (const obj of tracker.trackedObjects) {
 const response = await api.save(payload);
 // response.ids: [{ trackingId: 1, value: 99 }]  ← returned for both inserts and temporal changes
 
-// onCommit writes 99 to rule.id, transitions state to Unchanged
+// onCommit writes 99 to rule.id, transitions trakrState to Unchanged
 tracker.onCommit(response.ids);
-// rule.id     === 99   (new open row)
-// rule.state  === Unchanged
+// rule.id          === 99   (new open row)
+// rule.trakrState  === Unchanged
 // tracker.isDirty === false
 ```
 
@@ -1643,8 +1643,8 @@ tracker.onCommit(response.ids);
 If the user undoes past a committed temporal update, the object transitions back to `Changed` with the old field values restored by the property undo closures. On the next save, `obj.id` now holds `99` (the last committed PK), which is correct — the backend can use it to close row 99 and open a new one.
 
 ```
-onCommit:      rule.id = 99, state = Unchanged
-tracker.undo() rule.value restored to previous value, state = Changed
+onCommit:      rule.id = 99, trakrState = Unchanged
+tracker.undo() rule.value restored to previous value, trakrState = Changed
 Next save:     payload.changes includes { trackingId: 1, id: 99, value: '...' }
 Backend:       closes row 99, inserts row 100, returns { trackingId: 1, value: 100 }
 onCommit:      rule.id = 100
@@ -1652,7 +1652,7 @@ onCommit:      rule.id = 100
 
 ### Deleted items
 
-For `Deleted` items the PK never changes — the backend just closes the existing row. No `trackingId` is needed in the delete payload; `obj.id` is always the correct row to close.
+For `Deleted` items the PK never changes — the backend just closes the existing row. No `trakrId` is needed in the delete payload; `obj.id` is always the correct row to close.
 
 ---
 
@@ -1771,7 +1771,7 @@ Drop-in replacement for `@Tracked` that adds an **event-type tag** as the first 
 
 **Field-cluster grouping.** All fields on a class that share the same tag collapse into **one event**, whose payload contains **only the fields that are currently dirty relative to the last committed state**. Untouched fields are never included. `@Tracked` (untagged) fields continue to work — they participate in undo/redo/validation but do not contribute to event generation.
 
-**Do not name an `@EventTracked` field `state`** — it collides with `TrackedObject.state`, which is the enum used by the state machine. Use a different name (`stage`, `status`, `phase`, `workflowState`…).
+**Do not name an `@EventTracked` field `trakrState`** — it collides with `TrackedObject.trakrState`, which is the enum used by the state machine. Use a different name (`stage`, `status`, `phase`, `workflowState`…).
 
 ### `EventTracker`
 
@@ -1812,7 +1812,7 @@ Consumers can opt in to some lifecycle events but not others — the two options
 
 **Insert-then-remove collapses to zero events.** If a `TrackedObject` is pushed to a collection and then removed before Save, its state returns to `Unchanged` (see [Object state machine](#object-state-machine) — `removed/do` from `Insert` collapses to `Unchanged`). No `itemAdded` event is emitted for an object that was never really added.
 
-**Collections of primitives** — `EventTrackedCollection<string>`, `EventTrackedCollection<number>`, etc. — accept the lifecycle option bag but do not currently emit lifecycle events, because primitives have no `trackingId` or per-field tags. Track primitive add/remove via `collection.changed` if you need those events.
+**Collections of primitives** — `EventTrackedCollection<string>`, `EventTrackedCollection<number>`, etc. — accept the lifecycle option bag but do not currently emit lifecycle events, because primitives have no `trakrId` or per-field tags. Track primitive add/remove via `collection.changed` if you need those events.
 
 ### `GeneratedEvent`
 

@@ -494,7 +494,7 @@ describe("TrackedObject – construct()", () => {
 
     const model = tracker.construct(() => new RequiredNameModel(tracker));
 
-    expect(model.isValid).toBe(false);
+    expect(model.trakrIsValid).toBe(false);
     expect(model.validationMessages.get("name")).toBe("Name is required");
     expect(tracker.isValid).toBe(false);
   });
@@ -717,7 +717,7 @@ describe("Tracker.deletedObjects", () => {
     items.push(item);
     items.remove(item);
 
-    expect(item.state).toBe(State.Unchanged);
+    expect(item.trakrState).toBe(State.Unchanged);
     expect(tracker.deletedObjects).not.toContain(item);
   });
 
@@ -761,7 +761,7 @@ describe("Tracker.deletedObjects", () => {
     tracker.undo();
 
     // state is Insert after committed delete undo — not Deleted
-    expect(item.state).toBe(State.Insert);
+    expect(item.trakrState).toBe(State.Insert);
     expect(tracker.deletedObjects).not.toContain(item);
   });
 
@@ -773,7 +773,7 @@ describe("Tracker.deletedObjects", () => {
 
     parent.detail = null; // child → Deleted
 
-    expect(child.state).toBe(State.Deleted);
+    expect(child.trakrState).toBe(State.Deleted);
     expect(tracker.deletedObjects).toContain(child);
   });
 
@@ -798,7 +798,7 @@ describe("TrackedObject — @Tracked single-property composition lifecycle", () 
 
     node.leaf = leaf;
 
-    expect(leaf.state).toBe(State.Insert);
+    expect(leaf.trakrState).toBe(State.Insert);
     expect(tracker.trackedObjects).toContain(leaf);
   });
 
@@ -813,7 +813,7 @@ describe("TrackedObject — @Tracked single-property composition lifecycle", () 
 
     expect(tracker.trackedObjects).not.toContain(leaf1);
     expect(tracker.trackedObjects).toContain(leaf2);
-    expect(leaf2.state).toBe(State.Insert);
+    expect(leaf2.trakrState).toBe(State.Insert);
   });
 
   it("3. Replaced undone: old child is re-tracked as Insert, new child is untracked", () => {
@@ -827,7 +827,7 @@ describe("TrackedObject — @Tracked single-property composition lifecycle", () 
     tracker.undo();
 
     expect(tracker.trackedObjects).toContain(leaf1);
-    expect(leaf1.state).toBe(State.Insert);
+    expect(leaf1.trakrState).toBe(State.Insert);
     expect(tracker.trackedObjects).not.toContain(leaf2);
   });
 
@@ -844,7 +844,7 @@ describe("TrackedObject — @Tracked single-property composition lifecycle", () 
 
     expect(tracker.trackedObjects).not.toContain(leaf1);
     expect(tracker.trackedObjects).toContain(leaf2);
-    expect(leaf2.state).toBe(State.Insert);
+    expect(leaf2.trakrState).toBe(State.Insert);
   });
 
   it("validity flows correctly through replace → undo → redo", () => {

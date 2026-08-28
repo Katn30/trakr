@@ -521,7 +521,7 @@ describe("TrackerSession – ITrackerContext: trackedObjects / deletedObjects", 
     tracker.onCommit(); // person → Unchanged so removal marks it Deleted
     const session = tracker.startSession([[person, ["firstName"]]]);
     people.remove(person);
-    expect(person.state).toBe(State.Deleted);
+    expect(person.trakrState).toBe(State.Deleted);
     expect(session.deletedObjects).toEqual([person]);
   });
 

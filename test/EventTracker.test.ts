@@ -115,7 +115,7 @@ describe("EventTracker.generateEvents — grouped events", () => {
     expect(events).toHaveLength(1);
     expect(events[0].eventType).toBe(IssueEvents.SubmittedDetailsRevised);
     expect(events[0].payload).toEqual({ name: "N", description: "D" });
-    expect(events[0].trackingId).toBe(issue.trackingId);
+    expect(events[0].trackingId).toBe(issue.trakrId);
   });
 
   it("emits two events when two different eventTypes are both dirty", () => {
@@ -444,7 +444,7 @@ describe("EventTrackedCollection — aggregate mode with owner (tests 10-12, 17,
       },
     });
     expect(events[0].targetId).toBe("p1");
-    expect(events[0].trackingId).toBe(post.trackingId);
+    expect(events[0].trackingId).toBe(post.trakrId);
   });
 
   it("test 11: collection add + immediate remove of a new item — absent from added and removed", () => {
@@ -668,7 +668,7 @@ describe("Identity extraction (tests 13, 14, 15, 16)", () => {
     expect(slot.added).toEqual([{ id: null, v: "hello" }]);
 
     // Commit and verify @AutoId is patched
-    tracker.onCommit([{ trackingId: item.trackingId, value: 999 }]);
+    tracker.onCommit([{ trackingId: item.trakrId, value: 999 }]);
     expect(item.id).toBe(999);
   });
 
@@ -697,7 +697,7 @@ describe("Identity extraction (tests 13, 14, 15, 16)", () => {
     const item = tracker.construct(() => new MixedItem(tracker));
     tracker.withTrackingSuppressed(() => { item.key = "k"; item.v = "old"; });
     o.items.push(item);
-    tracker.onCommit([{ trackingId: item.trackingId, value: 42 }]);
+    tracker.onCommit([{ trackingId: item.trakrId, value: 42 }]);
     expect(item.id).toBe(42);
 
     item.v = "new";
@@ -723,9 +723,9 @@ describe("@EventTracked semantic parity", () => {
     }
     const tracker = newEventTracker();
     const m = tracker.construct(() => new M(tracker));
-    expect(m.isValid).toBe(false);
+    expect(m.trakrIsValid).toBe(false);
     m.name = "Alice";
-    expect(m.isValid).toBe(true);
+    expect(m.trakrIsValid).toBe(true);
   });
 
   it("coalesceWithin merges rapid writes into one undo step", () => {

@@ -51,7 +51,7 @@ describe("TrackedContainer – own @Tracked validators work normally", () => {
     const container = tracker.construct(() => new SingleChildContainer(tracker, items));
 
     expect(container.validationMessages.get("title")).toBe("Title required");
-    expect(container.isValid).toBe(false);
+    expect(container.trakrIsValid).toBe(false);
   });
 
   it("own validator clears when field is set to a valid value", () => {
@@ -62,7 +62,7 @@ describe("TrackedContainer – own @Tracked validators work normally", () => {
     container.title = "Something";
 
     expect(container.validationMessages.get("title")).toBeUndefined();
-    expect(container.isValid).toBe(true);
+    expect(container.trakrIsValid).toBe(true);
   });
 
   it("undoing a field change restores the validation error", () => {
@@ -75,7 +75,7 @@ describe("TrackedContainer – own @Tracked validators work normally", () => {
 
     expect(container.title).toBe("");
     expect(container.validationMessages.get("title")).toBe("Title required");
-    expect(container.isValid).toBe(false);
+    expect(container.trakrIsValid).toBe(false);
   });
 });
 
@@ -92,8 +92,8 @@ describe("TrackedContainer – isValid reflects TrackedObject child validity", (
       container.title = "T";
     });
 
-    expect(child.isValid).toBe(false);
-    expect(container.isValid).toBe(false);
+    expect(child.trakrIsValid).toBe(false);
+    expect(container.trakrIsValid).toBe(false);
   });
 
   it("is true when the container's own fields and all children are valid", () => {
@@ -106,8 +106,8 @@ describe("TrackedContainer – isValid reflects TrackedObject child validity", (
 
     child.name = "Alice";
 
-    expect(child.isValid).toBe(true);
-    expect(container.isValid).toBe(true);
+    expect(child.trakrIsValid).toBe(true);
+    expect(container.trakrIsValid).toBe(true);
   });
 
   it("is false when own field is invalid even if child is valid", () => {
@@ -119,9 +119,9 @@ describe("TrackedContainer – isValid reflects TrackedObject child validity", (
 
     child.name = "Alice";
 
-    expect(child.isValid).toBe(true);
+    expect(child.trakrIsValid).toBe(true);
     // title is still "" → container invalid despite valid child
-    expect(container.isValid).toBe(false);
+    expect(container.trakrIsValid).toBe(false);
   });
 
   it("becomes valid once both own field and child are valid", () => {
@@ -134,7 +134,7 @@ describe("TrackedContainer – isValid reflects TrackedObject child validity", (
     container.title = "T";
     child.name = "Alice";
 
-    expect(container.isValid).toBe(true);
+    expect(container.trakrIsValid).toBe(true);
   });
 });
 
@@ -156,8 +156,8 @@ describe("TrackedContainer – isValid reflects TrackedCollection child validity
       container.title = "T";
     });
 
-    expect(items.isValid).toBe(false);
-    expect(container.isValid).toBe(false);
+    expect(items.trakrIsValid).toBe(false);
+    expect(container.trakrIsValid).toBe(false);
   });
 
   it("becomes valid when the collection passes its validator", () => {
@@ -174,8 +174,8 @@ describe("TrackedContainer – isValid reflects TrackedCollection child validity
 
     items.push("first");
 
-    expect(items.isValid).toBe(true);
-    expect(container.isValid).toBe(true);
+    expect(items.trakrIsValid).toBe(true);
+    expect(container.trakrIsValid).toBe(true);
   });
 });
 
@@ -191,8 +191,8 @@ describe("TrackedContainer – multiple children: one invalid makes container in
     );
     childB.name = "B";
 
-    expect(childA.isValid).toBe(false);
-    expect(container.isValid).toBe(false);
+    expect(childA.trakrIsValid).toBe(false);
+    expect(container.trakrIsValid).toBe(false);
   });
 
   it("is false when the second child (TrackedObject) is invalid", () => {
@@ -204,8 +204,8 @@ describe("TrackedContainer – multiple children: one invalid makes container in
     );
     childA.name = "A";
 
-    expect(childB.isValid).toBe(false);
-    expect(container.isValid).toBe(false);
+    expect(childB.trakrIsValid).toBe(false);
+    expect(container.trakrIsValid).toBe(false);
   });
 
   it("is true when all children and own fields are valid", () => {
@@ -220,7 +220,7 @@ describe("TrackedContainer – multiple children: one invalid makes container in
     childB.name = "B";
 
     // note="" has no validator → container.isValid depends only on children
-    expect(container.isValid).toBe(true);
+    expect(container.trakrIsValid).toBe(true);
   });
 
   it("is false when a TrackedCollection child is invalid and TrackedObject child is valid", () => {
@@ -237,9 +237,9 @@ describe("TrackedContainer – multiple children: one invalid makes container in
 
     childA.name = "A";
 
-    expect(childA.isValid).toBe(true);
-    expect(childB.isValid).toBe(false);
-    expect(container.isValid).toBe(false);
+    expect(childA.trakrIsValid).toBe(true);
+    expect(childB.trakrIsValid).toBe(false);
+    expect(container.trakrIsValid).toBe(false);
   });
 });
 
@@ -321,8 +321,8 @@ describe("TrackedContainer – collection items are tracked automatically", () =
       () => new MultiChildContainer(tracker, [items]),
     );
 
-    expect(item.isValid).toBe(false);
-    expect(container.isValid).toBe(false);
+    expect(item.trakrIsValid).toBe(false);
+    expect(container.trakrIsValid).toBe(false);
   });
 
   it("item pre-existing in collection: container becomes valid when item becomes valid", () => {
@@ -335,8 +335,8 @@ describe("TrackedContainer – collection items are tracked automatically", () =
 
     item.name = "Alice";
 
-    expect(item.isValid).toBe(true);
-    expect(container.isValid).toBe(true);
+    expect(item.trakrIsValid).toBe(true);
+    expect(container.trakrIsValid).toBe(true);
   });
 
   it("pushing an invalid item makes the container invalid", () => {
@@ -345,12 +345,12 @@ describe("TrackedContainer – collection items are tracked automatically", () =
     const container = tracker.construct(
       () => new MultiChildContainer(tracker, [items]),
     );
-    expect(container.isValid).toBe(true);
+    expect(container.trakrIsValid).toBe(true);
 
     const item = tracker.construct(() => new ChildModel(tracker)); // name="" → invalid
     items.push(item);
 
-    expect(container.isValid).toBe(false);
+    expect(container.trakrIsValid).toBe(false);
   });
 
   it("pushed item becoming valid makes the container valid again", () => {
@@ -361,11 +361,11 @@ describe("TrackedContainer – collection items are tracked automatically", () =
     );
     const item = tracker.construct(() => new ChildModel(tracker));
     items.push(item);
-    expect(container.isValid).toBe(false);
+    expect(container.trakrIsValid).toBe(false);
 
     item.name = "Alice";
 
-    expect(container.isValid).toBe(true);
+    expect(container.trakrIsValid).toBe(true);
   });
 
   it("removing an invalid item restores container validity", () => {
@@ -376,11 +376,11 @@ describe("TrackedContainer – collection items are tracked automatically", () =
     );
     const item = tracker.construct(() => new ChildModel(tracker));
     items.push(item);
-    expect(container.isValid).toBe(false);
+    expect(container.trakrIsValid).toBe(false);
 
     items.remove(item);
 
-    expect(container.isValid).toBe(true);
+    expect(container.trakrIsValid).toBe(true);
   });
 
   it("undoing a push removes the item from tracking", () => {
@@ -391,11 +391,11 @@ describe("TrackedContainer – collection items are tracked automatically", () =
     );
     const item = tracker.construct(() => new ChildModel(tracker));
     items.push(item);
-    expect(container.isValid).toBe(false);
+    expect(container.trakrIsValid).toBe(false);
 
     tracker.undo();
 
-    expect(container.isValid).toBe(true);
+    expect(container.trakrIsValid).toBe(true);
   });
 
   it("redoing a push re-adds the item to tracking", () => {
@@ -407,11 +407,11 @@ describe("TrackedContainer – collection items are tracked automatically", () =
     const item = tracker.construct(() => new ChildModel(tracker));
     items.push(item);
     tracker.undo();
-    expect(container.isValid).toBe(true);
+    expect(container.trakrIsValid).toBe(true);
 
     tracker.redo();
 
-    expect(container.isValid).toBe(false);
+    expect(container.trakrIsValid).toBe(false);
   });
 
   it("isDirty is true when a collection item has dirty fields", () => {
@@ -445,11 +445,11 @@ describe("TrackedContainer – untrackChild", () => {
     }
 
     const container = tracker.construct(() => new DynamicContainer(tracker));
-    expect(container.isValid).toBe(false);
+    expect(container.trakrIsValid).toBe(false);
 
     container.remove();
 
-    expect(container.isValid).toBe(true);
+    expect(container.trakrIsValid).toBe(true);
   });
 
   it("untracking a TrackedCollection stops its items from affecting the container", () => {
@@ -466,11 +466,11 @@ describe("TrackedContainer – untrackChild", () => {
     }
 
     const container = tracker.construct(() => new DynamicContainer(tracker));
-    expect(container.isValid).toBe(false);
+    expect(container.trakrIsValid).toBe(false);
 
     container.remove();
 
-    expect(container.isValid).toBe(true);
+    expect(container.trakrIsValid).toBe(true);
   });
 
   it("after untracking a collection, newly pushed items no longer affect the container", () => {
@@ -491,7 +491,7 @@ describe("TrackedContainer – untrackChild", () => {
     const item = tracker.construct(() => new ChildModel(tracker)); // invalid
     items.push(item);
 
-    expect(container.isValid).toBe(true);
+    expect(container.trakrIsValid).toBe(true);
   });
 
   it("untracking a child that was never tracked is a no-op", () => {
@@ -506,6 +506,6 @@ describe("TrackedContainer – untrackChild", () => {
     const container = tracker.construct(() => new DynamicContainer(tracker));
 
     expect(() => container.remove()).not.toThrow();
-    expect(container.isValid).toBe(true);
+    expect(container.trakrIsValid).toBe(true);
   });
 });

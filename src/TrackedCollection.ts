@@ -31,10 +31,10 @@ export class TrackedCollection<T> implements Array<T>, ITracked {
     this._isDirty = value;
   }
 
-  public get isValid(): boolean {
+  public get trakrIsValid(): boolean {
     return this._isValid;
   }
-  private set isValid(value: boolean) {
+  private set trakrIsValid(value: boolean) {
     const wasValid = this._isValid;
     this._isValid = value;
     if (wasValid !== value) {
@@ -96,7 +96,7 @@ export class TrackedCollection<T> implements Array<T>, ITracked {
   }
 
   /** @internal */
-  readonly state = State.Unchanged as State;
+  readonly trakrState = State.Unchanged as State;
 
   /** @internal */
   _setState(_value: State): void {
@@ -109,7 +109,7 @@ export class TrackedCollection<T> implements Array<T>, ITracked {
       this.error = this._validator ? this._validator(this.collection) : undefined;
     });
     DependencyTracker.updateDeps(this, COLLECTION_VERSION_KEY, deps);
-    this.isValid = this.error === undefined;
+    this.trakrIsValid = this.error === undefined;
   }
 
   /** @internal */

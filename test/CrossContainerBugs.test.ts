@@ -75,6 +75,32 @@ class ParentEventTracked extends TrackedContainer {
 }
 
 // ===========================================================================
+// Bug 1 — VARIANT C: state written as an inner write (via onChange callback)
+// ===========================================================================
+
+class ParentInnerWrite extends TrackedContainer {
+  // Writing `trigger = "advance"` fires onChange which writes `state` as an
+  // inner write (the owner is `trigger`, not `state`).
+  @Tracked(
+    undefined,
+    (self: ParentInnerWrite, v: string) => {
+      if (v === "advance") self.state = "fix_in_progress";
+    },
+  )
+  accessor trigger: string = "";
+
+  @Tracked() accessor state: string = "root_cause_analysis";
+
+  readonly child: ChildTracked;
+
+  constructor(tracker: Tracker) {
+    super(tracker);
+    this.child = new ChildTracked(tracker, () => this.state);
+    this.trackChild(this.child);
+  }
+}
+
+// ===========================================================================
 // Bug 2 — addSubtask with startSession() + withContext() (the actual code)
 // ===========================================================================
 
@@ -140,32 +166,6 @@ class Issue extends TrackedContainer {
 }
 
 // ===========================================================================
-// Bug 1 — VARIANT C: state written as an inner write (via onChange callback)
-// ===========================================================================
-
-class ParentInnerWrite extends TrackedContainer {
-  // Writing `trigger = "advance"` fires onChange which writes `state` as an
-  // inner write (the owner is `trigger`, not `state`).
-  @Tracked(
-    undefined,
-    (self: ParentInnerWrite, v: string) => {
-      if (v === "advance") self.state = "fix_in_progress";
-    },
-  )
-  accessor trigger: string = "";
-
-  @Tracked() accessor state: string = "root_cause_analysis";
-
-  readonly child: ChildTracked;
-
-  constructor(tracker: Tracker) {
-    super(tracker);
-    this.child = new ChildTracked(tracker, () => this.state);
-    this.trackChild(this.child);
-  }
-}
-
-// ===========================================================================
 // Tests — Bug 1 Variant A (@Tracked control)
 // ===========================================================================
 
@@ -179,13 +179,13 @@ describe("Bug 1A — @Tracked cross-container validator re-run via closure (cont
   });
 
   it("child is valid before state advances", () => {
-    expect(parent.child.isValid).toBe(true);
+    expect(parent.child.trakrIsValid).toBe(true);
   });
 
   it("child becomes invalid when state advances and fixNotes is null", () => {
     parent.state = "fix_in_progress";
 
-    expect(parent.child.isValid).toBe(false);
+    expect(parent.child.trakrIsValid).toBe(false);
     expect(parent.child.validationMessages.get("fixNotes")).toBe("fixNotesRequired");
   });
 
@@ -210,14 +210,14 @@ describe("Bug 1C — inner-write revalidation: state written via onChange, child
   });
 
   it("child is valid before trigger fires", () => {
-    expect(parent.child.isValid).toBe(true);
+    expect(parent.child.trakrIsValid).toBe(true);
   });
 
   it("child becomes invalid when trigger advances state as inner write", () => {
     parent.trigger = "advance";   // onChange writes state="fix_in_progress" as inner write
 
     expect(parent.state).toBe("fix_in_progress");
-    expect(parent.child.isValid).toBe(false);
+    expect(parent.child.trakrIsValid).toBe(false);
     expect(parent.child.validationMessages.get("fixNotes")).toBe("fixNotesRequired");
   });
 
@@ -242,20 +242,20 @@ describe("Bug 1B — @EventTracked cross-container validator re-run via closure 
   });
 
   it("child is valid before state advances", () => {
-    expect(parent.child.isValid).toBe(true);
+    expect(parent.child.trakrIsValid).toBe(true);
   });
 
   it("child becomes invalid when state advances and fixNotes is null", () => {
     parent.state = "fix_in_progress";
 
-    expect(parent.child.isValid).toBe(false);
+    expect(parent.child.trakrIsValid).toBe(false);
     expect(parent.child.validationMessages.get("fixNotes")).toBe("fixNotesRequired");
   });
 
-  it("parent.isValid reflects child invalidity", () => {
+  it("parent.trakrIsValid reflects child invalidity", () => {
     parent.state = "fix_in_progress";
 
-    expect(parent.isValid).toBe(false);
+    expect(parent.trakrIsValid).toBe(false);
   });
 
   it("tracker.isValid becomes false when child becomes invalid", () => {
@@ -268,14 +268,14 @@ describe("Bug 1B — @EventTracked cross-container validator re-run via closure 
     parent.state = "fix_in_progress";
     parent.child.fixNotes = "fixed";
 
-    expect(parent.child.isValid).toBe(true);
+    expect(parent.child.trakrIsValid).toBe(true);
   });
 
   it("child returns to valid when state drops back below fix_in_progress", () => {
     parent.state = "fix_in_progress";
     parent.state = "root_cause_analysis";
 
-    expect(parent.child.isValid).toBe(true);
+    expect(parent.child.trakrIsValid).toBe(true);
   });
 });
 

@@ -128,20 +128,20 @@ describe("Tracked", () => {
 
   describe("validation", () => {
     it("is valid initially (default values satisfy validators)", () => {
-      expect(person.isValid).toBe(false);
+      expect(person.trakrIsValid).toBe(false);
       expect(person.validationMessages.get("name")).toBe("Name is required");
     });
 
     it("becomes valid when the required property is set", () => {
       person.name = "Alice";
-      expect(person.isValid).toBe(true);
+      expect(person.trakrIsValid).toBe(true);
       expect(person.validationMessages.has("name")).toBe(false);
     });
 
     it("becomes invalid when a property fails its validator", () => {
       person.name = "Alice";
       person.age = -1;
-      expect(person.isValid).toBe(false);
+      expect(person.trakrIsValid).toBe(false);
       expect(person.validationMessages.get("age")).toBe("Age must be positive");
     });
 
@@ -159,7 +159,7 @@ describe("Tracked", () => {
 
     it("model without validators is always valid", () => {
       const empty = tracker.construct(() => new EmptyModel(tracker));
-      expect(empty.isValid).toBe(true);
+      expect(empty.trakrIsValid).toBe(true);
     });
   });
 
@@ -411,7 +411,7 @@ describe("@Tracked on getter — dependency tracking", () => {
     it("validators for dependent properties run after construction", () => {
       const tracker = new Tracker();
       const rule = tracker.construct(() => new RuleModel(tracker));
-      expect(rule.isValid).toBe(true);
+      expect(rule.trakrIsValid).toBe(true);
     });
 
     it("setting isEnabled=true triggers revalidation of scheduleDays", () => {
@@ -428,10 +428,10 @@ describe("@Tracked on getter — dependency tracking", () => {
       const rule = tracker.construct(() => new RuleModel(tracker));
 
       rule.isEnabled = true;
-      expect(rule.isValid).toBe(false);
+      expect(rule.trakrIsValid).toBe(false);
 
       rule.isEnabled = false;
-      expect(rule.isValid).toBe(true);
+      expect(rule.trakrIsValid).toBe(true);
     });
 
     it("dependent validators re-run without manual revalidate()", () => {
@@ -451,11 +451,11 @@ describe("@Tracked on getter — dependency tracking", () => {
       const rule = tracker.construct(() => new RuleModel(tracker));
 
       rule.isEnabled = true;
-      expect(rule.isValid).toBe(false);
+      expect(rule.trakrIsValid).toBe(false);
 
       tracker.undo();
       expect(rule.isEnabled).toBe(false);
-      expect(rule.isValid).toBe(true);
+      expect(rule.trakrIsValid).toBe(true);
     });
 
     it("getter-decorated property does not create an undo step on read", () => {

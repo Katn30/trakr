@@ -57,7 +57,7 @@ export class EventTracker extends Tracker {
       if (!legacy) continue;
 
       const meta = getEventMetadata(Object.getPrototypeOf(obj));
-      switch (obj.state) {
+      switch (obj.trakrState) {
         case State.Insert:
           if (legacy.itemAdded) {
             events.push(buildItemAddedEvent<TEventType>(obj, meta, legacy.itemAdded));
@@ -131,7 +131,7 @@ export class EventTracker extends Tracker {
         const event: GeneratedEvent<TEventType> = {
           eventType: group as TEventType,
           payload,
-          trackingId: obj.trackingId,
+          trackingId: obj.trakrId,
         };
         if (identity !== undefined) {
           event.targetId = identity;
@@ -185,7 +185,7 @@ function buildItemAddedEvent<TEventType extends string>(
   return {
     eventType: eventType as TEventType,
     payload,
-    trackingId: obj.trackingId,
+    trackingId: obj.trakrId,
   };
 }
 
@@ -240,7 +240,7 @@ function pushFieldClusterEvents<TEventType extends string>(
     const event: GeneratedEvent<TEventType> = {
       eventType: eventType as TEventType,
       payload,
-      trackingId: obj.trackingId,
+      trackingId: obj.trakrId,
     };
     if (typeof targetIdRaw === "number") {
       event.targetId = targetIdRaw;
@@ -327,9 +327,9 @@ function computeBucketedSlot(
 
   for (const item of col.collection) {
     if (item instanceof TrackedObject) {
-      if (item.state === State.Insert) {
+      if (item.trakrState === State.Insert) {
         added.push(snapshotItemForAdded(item));
-      } else if (item.state === State.Changed) {
+      } else if (item.trakrState === State.Changed) {
         const entry = buildChangedEntry(item);
         if (entry) changed.push(entry);
       }
@@ -345,7 +345,7 @@ function computeBucketedSlot(
     }
   } else {
     for (const obj of tracker.trackedObjects) {
-      if (obj.state !== State.Deleted) continue;
+      if (obj.trakrState !== State.Deleted) continue;
       if (getItemOrigin(obj) !== col) continue;
       const identity = getIdentity(obj);
       removed.push(identity);

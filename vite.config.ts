@@ -29,4 +29,7 @@ const esbuildDecoratorPlugin = {
 export default defineConfig({
     plugins: [esbuildDecoratorPlugin],
     oxc: false,
+    test: {
+        exclude: ['.claude/**', 'node_modules/**'],
+    },
 });
