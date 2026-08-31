@@ -692,7 +692,7 @@ tracker.construct(() => {
 const fresh = tracker.new(() => new MyModel(tracker));
 ```
 
-`tracker.construct()` suppresses tracking entirely. `tracker.new()` lets `changed` events fire during construction — so defaults appear in `generateEvents()` — but discards the undo entries, leaving the tracker clean. Both run validators once after all objects are created and call `tracker.revalidate()` exactly once at the end.
+`tracker.construct()` suppresses tracking entirely. `tracker.new()` lets `changed` events fire during construction — so defaults appear in `generateEvents()` — but discards the undo entries and resets the object to `Unchanged`, leaving the tracker clean. The `Unchanged` guarantee means you can immediately push the returned object into an `EventTrackedCollection` and it will correctly transition to `Insert`. Both run validators once after all objects are created and call `tracker.revalidate()` exactly once at the end.
 
 **Tracking suppression**
 
@@ -1847,7 +1847,7 @@ interface GeneratedEvent<
 
 4. **`@Tracked` and `@EventTracked` are freely mixable on the same class.** `@Tracked` fields participate in undo/redo/validation as usual; they simply never appear in event payloads.
 
-5. **`tracker.new()` surfaces constructor defaults in the first event.** Use `tracker.new()` (instead of `tracker.construct()`) when the user creates a new object. Defaults set in the constructor appear in `generateEvents()` until `onCommit()` resets the baseline. The tracker is clean (`isDirty === false`) immediately after `tracker.new()` returns — it becomes dirty only on the first post-construction edit. Use `tracker.construct()` for loading saved data — those writes are suppressed and produce no events.
+5. **`tracker.new()` surfaces constructor defaults in the first event.** Use `tracker.new()` (instead of `tracker.construct()`) when the user creates a new object. Defaults set in the constructor appear in `generateEvents()` until `onCommit()` resets the baseline. The tracker is clean (`isDirty === false`) and the object is in `Unchanged` state immediately after `tracker.new()` returns — pushing it to an `EventTrackedCollection` then correctly transitions it to `Insert` and emits `itemAdded`. Use `tracker.construct()` for loading saved data — those writes are suppressed and produce no events.
 
 ### Ordering
 

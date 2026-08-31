@@ -196,6 +196,9 @@ export class Tracker implements ITrackerContext {
     for (let i = objectsBefore; i < this.trackedObjects.length; i++) {
       validate(this.trackedObjects[i]);
       this.trackedObjects[i]._setDirtyCounter(0);
+      if (this.trackedObjects[i].trakrState === State.Changed) {
+        this.trackedObjects[i]._setState(State.Unchanged);
+      }
     }
     this._constructionDepth--;
     this.isValid = this._invalidCount === 0;

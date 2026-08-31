@@ -1,5 +1,25 @@
 # Changelog
 
+## [5.0.3] — 2026-08-31
+
+### Fix: `tracker.new()` leaves object in `Unchanged` state when constructor writes `@EventTracked` fields
+
+When an object created with `tracker.new()` was subsequently pushed into an `EventTrackedCollection`, `_markAdded()` returned early because the object's state was `Changed` instead of `Unchanged`. The object stayed in `Changed` state, and `generateEvents()` emitted a field-cluster event instead of the expected `itemAdded` lifecycle event.
+
+**Root cause.** `tracker.new()` does not suppress tracking, so `changed` events fire during construction (this is intentional — it populates event state so standalone `generateEvents()` calls return the constructor defaults). Any write to an `@EventTracked` or `@Tracked` accessor during construction transitions the object from `Unchanged` to `Changed`. The cleanup loop at the end of `new()` resets `dirtyCounter` to 0 and discards undo ops, but did not reset the state field. The `_markAdded()` guard `if (this._state !== "Unchanged") return` then silently skipped the object.
+
+**Fix.** The cleanup loop in `tracker.new()` now resets objects that ended up in `Changed` state back to `Unchanged`. `clearEventState` is deliberately NOT called — the event state populated during construction must be preserved so that standalone `generateEvents()` calls (without a collection push) continue to surface constructor defaults.
+
+**Behaviour after the fix:**
+
+- `tracker.new()` always returns an object in `Unchanged` state, regardless of what the constructor writes.
+- Pushing the object into an `EventTrackedCollection` correctly transitions it to `Insert` and emits `itemAdded` at `generateEvents()` time.
+- Standalone `generateEvents()` (without a collection push) is unaffected — constructor defaults still appear in the event payload.
+
+No breaking changes.
+
+---
+
 ## [5.0.2] — 2026-08-31
 
 ### Fix: removing a non-Insert invalid item from a collection now releases its validity contribution

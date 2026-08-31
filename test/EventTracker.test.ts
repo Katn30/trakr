@@ -965,3 +965,47 @@ describe("tracker.new()", () => {
     expect(events[0].payload).toEqual({ priority: 1 });
   });
 });
+
+// ---------------------------------------------------------------------------- tracker.new() + EventTrackedCollection
+
+describe("tracker.new() — object pushed to EventTrackedCollection emits itemAdded", () => {
+  class Task extends TrackedObject {
+    @AutoId id: number = 0;
+    @EventTracked(undefined, undefined, { eventType: "task_changed" })
+    accessor type: string = "default";
+    constructor(t: Tracker, type: string) {
+      super(t);
+      this.type = type;
+    }
+  }
+
+  it("object created with non-default constructor value is Unchanged after tracker.new()", () => {
+    const tracker = newEventTracker();
+    const task = tracker.new(() => new Task(tracker, "custom"));
+    expect(task.trakrState).toBe("Unchanged");
+  });
+
+  it("pushing a tracker.new() object emits itemAdded, not a field-cluster event", () => {
+    const tracker = newEventTracker();
+    const collection = new EventTrackedCollection<Task>(tracker, [], undefined, {
+      itemAdded: "task_added",
+      itemRemoved: "task_removed",
+    });
+    const task = tracker.new(() => new Task(tracker, "custom"));
+    collection.push(task);
+
+    const events = tracker.generateEvents();
+    expect(events).toHaveLength(1);
+    expect(events[0].eventType).toBe("task_added");
+    expect(events[0].payload).toMatchObject({ type: "custom" });
+  });
+
+  it("existing tracker.new() standalone behavior is unaffected — defaults appear in generateEvents()", () => {
+    const tracker = newEventTracker();
+    tracker.new(() => new Task(tracker, "custom"));
+    const events = tracker.generateEvents();
+    expect(events).toHaveLength(1);
+    expect(events[0].eventType).toBe("task_changed");
+    expect(events[0].payload).toEqual({ type: "custom" });
+  });
+});
