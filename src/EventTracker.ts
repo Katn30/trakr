@@ -4,6 +4,7 @@ import { State } from "./State";
 import {
   IdAssignment,
   getAutoIdProperty,
+  getIdProperty,
   getIdentity,
   getIdentityObject,
   getIdentityProperties,
@@ -193,13 +194,15 @@ function buildItemRemovedEvent<TEventType extends string>(
   obj: TrackedObject,
   eventType: string,
 ): GeneratedEvent<TEventType> {
-  const autoIdProp = getAutoIdProperty(Object.getPrototypeOf(obj));
-  const targetId = autoIdProp
-    ? (obj as unknown as Record<string, unknown>)[autoIdProp]
+  const proto = Object.getPrototypeOf(obj);
+  const idProp = getAutoIdProperty(proto) ?? getIdProperty(proto);
+  const targetId = idProp
+    ? (obj as unknown as Record<string, unknown>)[idProp]
     : undefined;
   const event: GeneratedEvent<TEventType> = {
     eventType: eventType as TEventType,
     payload: {},
+    trackingId: obj.trakrId,
   };
   if (typeof targetId === "number") {
     event.targetId = targetId;

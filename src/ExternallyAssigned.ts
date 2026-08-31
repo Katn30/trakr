@@ -48,6 +48,11 @@ export function getAutoIdProperty(proto: object): string | undefined {
   return AUTO_ID in proto ? ((proto as any)[AUTO_ID] as string) : undefined;
 }
 
+export function getIdProperty(proto: object): string | undefined {
+  const autoId = getAutoIdProperty(proto);
+  return getIdentityProperties(proto).find(p => p !== autoId);
+}
+
 export function getIdentityProperties(proto: object): string[] {
   const chain: object[] = [];
   let current: object | null = proto;

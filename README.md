@@ -1804,7 +1804,7 @@ For items that are themselves `TrackedObject`s, the following per-item rules app
 | Item state | With `itemAdded` set | With `itemAdded` omitted |
 |---|---|---|
 | `Insert` | One `itemAdded` event, payload = **all** `@EventTracked` fields on the item (regardless of tag) | No event |
-| `Deleted` | One `itemRemoved` event, payload = `{}`, `targetId` = the item's `@AutoId` value | No event |
+| `Deleted` | One `itemRemoved` event, payload = `{}`, `trackingId` always set, `targetId` = numeric `@AutoId` or `@Id` value (if present) | No event |
 | `Changed` | Per-field-cluster events (as if the item were a standalone `Changed` model) | Same — per-field-cluster events |
 | `Unchanged` | No event | No event |
 
@@ -1832,8 +1832,8 @@ interface GeneratedEvent<
 |---|---|---|
 | `eventType` | Always | The tag value from the consumer's enum / string-literal union |
 | `payload` | Always | For lifecycle `itemAdded`: all `@EventTracked` fields' current values. For field-cluster events: only the dirty fields carrying that tag. For lifecycle `itemRemoved`: `{}`. Values of `undefined` are normalised to `null` |
-| `trackingId` | On events emitted from `Insert` or `Changed` items | Correlate with the backend's `IdAssignment[]` response — same mechanism as v2 |
-| `targetId` | On events emitted from `Changed` or `Deleted` items when the model has `@AutoId` | The current `@AutoId` value; the backend uses it to identify the row |
+| `trackingId` | On events emitted from `Insert`, `Changed`, or `Deleted` items | Correlate with the backend's `IdAssignment[]` response, or call `tracker.getByTrackingId()` to recover the object |
+| `targetId` | On events emitted from `Changed` or `Deleted` items when the model has a numeric `@AutoId` or `@Id` | `@AutoId` takes precedence; `@Id` is used as fallback. Non-numeric identity values are omitted |
 
 ### Semantic rules
 

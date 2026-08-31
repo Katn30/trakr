@@ -395,6 +395,51 @@ describe("EventTrackedCollection — legacy itemAdded/itemRemoved (BC)", () => {
     expect(events).toHaveLength(1);
     expect(events[0].eventType).toBe(IssueEvents.CommentRemoved);
     expect(events[0].targetId).toBe(77);
+    expect(events[0].trackingId).toBe(comment.trakrId);
+  });
+
+  it("itemRemoved of @Id item carries targetId and trackingId", () => {
+    class ProductModel extends TrackedObject {
+      @Id id: number = 0;
+      constructor(t: Tracker) { super(t); }
+    }
+    const tracker = newEventTracker();
+    const product = tracker.construct(() => new ProductModel(tracker));
+    const products = new EventTrackedCollection<ProductModel>(tracker, [product], undefined, {
+      itemAdded: "product_added",
+      itemRemoved: "product_removed",
+    });
+    tracker.withTrackingSuppressed(() => { product.id = 17; });
+    tracker.onCommit();
+
+    products.remove(product);
+    const events = tracker.generateEvents();
+    expect(events).toHaveLength(1);
+    expect(events[0].eventType).toBe("product_removed");
+    expect(events[0].targetId).toBe(17);
+    expect(events[0].trackingId).toBe(product.trakrId);
+  });
+
+  it("itemRemoved of @Id item with non-numeric id carries trackingId but no targetId", () => {
+    class TagModel extends TrackedObject {
+      @Id slug: string = "";
+      constructor(t: Tracker) { super(t); }
+    }
+    const tracker = newEventTracker();
+    const tag = tracker.construct(() => new TagModel(tracker));
+    const tags = new EventTrackedCollection<TagModel>(tracker, [tag], undefined, {
+      itemAdded: "tag_added",
+      itemRemoved: "tag_removed",
+    });
+    tracker.withTrackingSuppressed(() => { tag.slug = "typescript"; });
+    tracker.onCommit();
+
+    tags.remove(tag);
+    const events = tracker.generateEvents();
+    expect(events).toHaveLength(1);
+    expect(events[0].eventType).toBe("tag_removed");
+    expect(events[0].trackingId).toBe(tag.trakrId);
+    expect(events[0].targetId).toBeUndefined();
   });
 });
 
