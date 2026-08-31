@@ -1,5 +1,28 @@
 # Changelog
 
+## [5.0.2] — 2026-08-31
+
+### Fix: removing a non-Insert invalid item from a collection now releases its validity contribution
+
+When a committed (`Unchanged` or `Changed`) item that was invalid was removed from a `TrackedCollection` or `EventTrackedCollection`, `tracker.isValid` stayed `false` even though the item was being deleted and its field values no longer matter.
+
+**Root cause.** `_markRemoved` on `TrackedObject` handles two cases. For `Insert` items (`collapseInsert = true`) it calls `_untrackObject`, which decrements `_invalidCount` as a side effect. For non-Insert items it only called `applyStateTransition` — transitioning state to `Deleted` — but never adjusted `_invalidCount`. The invalid contribution was therefore never released.
+
+This also caused a double-count on undo: undoing the remove restored the item to `Changed`/`Unchanged` and re-exposed it in the UI, but since `_invalidCount` was never decremented on removal, the undo's restoration increment pushed the count above its true value.
+
+**Fix.** In the "do" closure, when `collapseInsert` is `false` and the item was invalid, `_onValidityChanged(false, true)` is called to release the contribution without untracking the object (the item must stay in `trackedObjects` so it can be persisted as a delete and be undoable). In the "undo" closure the mirror call `_onValidityChanged(true, false)` restores it.
+
+**Behaviour after the fix:**
+
+- Removing an invalid `Changed` item makes `tracker.isValid` update immediately.
+- The item remains in `trackedObjects` as `Deleted` — it will still be included in the save payload.
+- Undoing the remove correctly restores the invalid contribution; `tracker.isValid` goes back to `false`.
+- `Insert` items are unaffected — their path was already correct.
+
+No breaking changes.
+
+---
+
 ## [5.0.1] — 2026-08-31
 
 ### Fix: `buildItemRemovedEvent` now surfaces `@Id` identity and `trackingId`

@@ -793,3 +793,69 @@ describe("TrackedCollection — Insert-remove untracks the item", () => {
     expect(tracker.trackedObjects).toEqual([another]);
   });
 });
+
+describe("TrackedCollection — removing committed invalid items releases validity", () => {
+  let tracker: Tracker;
+
+  beforeEach(() => {
+    tracker = new Tracker();
+  });
+
+  it("removing an invalid Changed item restores tracker.isValid", () => {
+    const col = new TrackedCollection<RequiredNameItem>(tracker);
+    const item = tracker.construct(() => new RequiredNameItem(tracker));
+    item.name = "alice";
+    col.push(item);
+    tracker.onCommit();
+
+    item.name = "";
+    expect(tracker.isValid).toBe(false);
+
+    col.remove(item);
+
+    expect(tracker.isValid).toBe(true);
+  });
+
+  it("removed invalid Changed item stays in trackedObjects as Deleted", () => {
+    const col = new TrackedCollection<RequiredNameItem>(tracker);
+    const item = tracker.construct(() => new RequiredNameItem(tracker));
+    item.name = "alice";
+    col.push(item);
+    tracker.onCommit();
+
+    item.name = "";
+    col.remove(item);
+
+    expect(tracker.trackedObjects).toContain(item);
+    expect(item.trakrState).toBe(State.Deleted);
+  });
+
+  it("undo of removing an invalid Changed item restores invalid contribution", () => {
+    const col = new TrackedCollection<RequiredNameItem>(tracker);
+    const item = tracker.construct(() => new RequiredNameItem(tracker));
+    item.name = "alice";
+    col.push(item);
+    tracker.onCommit();
+
+    item.name = "";
+    col.remove(item);
+    expect(tracker.isValid).toBe(true);
+
+    tracker.undo();
+
+    expect(item.trakrState).toBe(State.Changed);
+    expect(tracker.isValid).toBe(false);
+  });
+
+  it("removing a valid Unchanged item does not affect tracker.isValid", () => {
+    const col = new TrackedCollection<RequiredNameItem>(tracker);
+    const item = tracker.construct(() => new RequiredNameItem(tracker));
+    item.name = "alice";
+    col.push(item);
+    tracker.onCommit();
+
+    expect(tracker.isValid).toBe(true);
+    col.remove(item);
+    expect(tracker.isValid).toBe(true);
+  });
+});

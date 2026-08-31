@@ -118,12 +118,16 @@ export abstract class TrackedObject implements ITracked, StateTarget {
         if (collapseInsert) {
           DependencyTracker.clearDeps(this);
           this.tracker._untrackObject(this);
+        } else if (!wasValid) {
+          this.tracker._onValidityChanged(false, true);
         }
       },
       () => {
         if (collapseInsert) {
           this.tracker._trackObject(this);
           if (!wasValid) this.tracker._onValidityChanged(true, false);
+        } else if (!wasValid) {
+          this.tracker._onValidityChanged(true, false);
         }
         applyStateTransition(this, "removed", "undo", { prevState, prevDirtyCounter });
       },
