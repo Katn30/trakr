@@ -1,5 +1,40 @@
 # Changelog
 
+## [5.1.0] — 2026-09-07
+
+### New: `tracker.discardPendingChanges()` — programmatically throw away all pending edits
+
+Adds `Tracker.discardPendingChanges()` (and a matching override on `EventTracker`) that resets the tracker to its last-committed state without treating the revert as a successful save.
+
+**The problem.** `onCommit()` is the only way to clear `isDirty`, but it signals "these changes were successfully persisted." When a caller needs to throw away unsaved edits — concurrency conflict resolution, user-confirmed cancel, page-reload after a dirty guard fires — calling `onCommit()` is semantically wrong: it implies persistence that never happened and could mislead any code inspecting what occurred.
+
+**What the method does:**
+
+- Reverts every tracked object to its last-committed state — equivalent to undoing all edits since the last `onCommit()` (or since `tracker.construct()` / `tracker.new()` if no commit has happened yet).
+- Removes `Insert`-state objects that were never committed from `tracker.trackedObjects`.
+- Sets `isDirty` to `false` synchronously and fires `isDirtyChanged(false)`, so subscribers (e.g. a `beforeunload` guard) react before the caller proceeds.
+- Clears both the undo and redo history stacks — nothing meaningful remains to undo after an explicit discard.
+- Does **not** assign server IDs. That is `onCommit()`'s job.
+
+**`EventTracker` override** additionally clears all event state and collection history ops, so `generateEvents()` returns `[]` after the call — consistent with the post-`onCommit` invariant.
+
+**Designed for the beforeunload pattern:**
+
+```typescript
+tracker.isDirtyChanged.subscribe((dirty) => {
+  if (dirty) window.addEventListener('beforeunload', guard);
+  else        window.removeEventListener('beforeunload', guard);
+});
+
+// On confirmed discard (e.g. concurrency conflict modal):
+tracker.discardPendingChanges(); // isDirtyChanged(false) fires → guard removes itself
+window.location.reload();        // safe: guard is already gone
+```
+
+No breaking changes.
+
+---
+
 ## [5.0.3] — 2026-08-31
 
 ### Fix: `tracker.new()` leaves object in `Unchanged` state when constructor writes `@EventTracked` fields

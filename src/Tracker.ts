@@ -357,6 +357,32 @@ export class Tracker implements ITrackerContext {
     this.reset();
   }
 
+  public discardPendingChanges(): void {
+    const commitIdx = this._commitStateOperation !== undefined
+      ? this._undoOperations.indexOf(this._commitStateOperation)
+      : -1;
+    const toRevert = this._undoOperations.splice(commitIdx + 1);
+
+    this._undoOperations.length = 0;
+    this._redoOperations.length = 0;
+    this._commitStateOperation = undefined;
+
+    if (toRevert.length > 0) {
+      this._isReplaying = true;
+      this.withTrackingSuppressed(() => {
+        for (let i = toRevert.length - 1; i >= 0; i--) {
+          toRevert[i].undo();
+        }
+      });
+      this._isReplaying = false;
+      this._version -= toRevert.length;
+      this.versionChanged.emit(this._version);
+    }
+
+    this.reset();
+    this.revalidate();
+  }
+
   public getByTrackingId(trackingId: number): TrackedObject | undefined {
     return this.trackedObjects.find((o) => o.trakrId === trackingId);
   }

@@ -47,6 +47,18 @@ export class EventTracker extends Tracker {
     }
   }
 
+  public override discardPendingChanges(): void {
+    super.discardPendingChanges();
+    for (const obj of this.trackedObjects) {
+      clearEventState(obj);
+    }
+    for (const col of this.trackedCollections) {
+      if (col instanceof EventTrackedCollection) {
+        (col as EventTrackedCollection<unknown>)._clearHistoryOps();
+      }
+    }
+  }
+
   public generateEvents<TEventType extends string = string>(): GeneratedEvent<TEventType>[] {
     const events: GeneratedEvent<TEventType>[] = [];
 
