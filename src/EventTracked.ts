@@ -1,5 +1,5 @@
 import { TrackedObject } from "./TrackedObject";
-import { Tracked } from "./Tracked";
+import { Tracked, ChangeHook, ChangeHooks } from "./Tracked";
 import {
   registerEventProperty,
   ensureEventStateSubscription,
@@ -14,10 +14,10 @@ export interface EventTrackedOptions {
 
 export function EventTracked(
   validator?: (self: any, newValue: any) => string | undefined,
-  onChange?: (self: any, newValue: any, oldValue: any) => void,
+  hooks?: ChangeHooks | ChangeHook,
   options?: EventTrackedOptions,
 ) {
-  const trackedDecorator = Tracked(validator, onChange, {
+  const trackedDecorator = Tracked(validator, hooks, {
     coalesceWithin: options?.coalesceWithin,
   });
 

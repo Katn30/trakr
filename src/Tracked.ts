@@ -6,11 +6,44 @@ import { State } from "./State";
 import { registerPropertyValidator } from "./Registry";
 import { DependencyTracker } from "./DependencyTracker";
 
+export type ChangeHook<TSelf = any, TValue = any> = (
+  self: TSelf,
+  newValue: TValue,
+  oldValue: TValue,
+) => void;
+
+export interface ChangeHooks<TSelf = any, TValue = any> {
+  beforeChange?: ChangeHook<TSelf, TValue>;
+  afterChange?: ChangeHook<TSelf, TValue>;
+}
+
+let legacyOnChangeWarned = false;
+
+function normalizeHooks(
+  hooks: ChangeHooks | ChangeHook | undefined,
+): { before?: ChangeHook; after?: ChangeHook } {
+  if (!hooks) return {};
+  if (typeof hooks === "function") {
+    if (!legacyOnChangeWarned) {
+      legacyOnChangeWarned = true;
+      // eslint-disable-next-line no-console
+      console.warn(
+        "[trakr] @Tracked/@EventTracked: passing a bare onChange function is deprecated. " +
+          "Use `{ beforeChange, afterChange }` instead. The bare function is mapped to `beforeChange`.",
+      );
+    }
+    return { before: hooks };
+  }
+  return { before: hooks.beforeChange, after: hooks.afterChange };
+}
+
 export function Tracked(
   validator?: (self: any, newValue: any) => string | undefined,
-  onChange?: (self: any, newValue: any, oldValue: any) => void,
+  hooks?: ChangeHooks | ChangeHook,
   options?: { coalesceWithin?: number },
 ) {
+  const { before: beforeHook, after: afterHook } = normalizeHooks(hooks);
+
   function decorator<T extends TrackedObject, V>(
     target: ClassAccessorDecoratorTarget<T, V>,
     context: ClassAccessorDecoratorContext<T, V>,
@@ -83,12 +116,17 @@ export function Tracked(
               if (tracked.trakrState === State.Unchanged) tracked._setState(State.Changed);
               if (oldValue instanceof TrackedObject) oldValue._markRemoved();
               if (newValue instanceof TrackedObject) newValue._markAdded();
-              if (!this.tracker._isReplaying && onChange) {
-                onChange(this, newValue, oldValue);
+              const event = { property: propertyName, oldValue, newValue };
+              if (!this.tracker._isReplaying && beforeHook) {
+                beforeHook(this, newValue, oldValue);
               }
-              this.changed.emit({ property: propertyName, oldValue, newValue });
+              this.beforeChange.emit(event);
+              this.afterChange.emit(event);
               if (!this.tracker._isReplaying) {
-                this.trackedChanged.emit({ property: propertyName, oldValue, newValue });
+                this.trackedChanged.emit(event);
+              }
+              if (!this.tracker._isReplaying && afterHook) {
+                afterHook(this, newValue, oldValue);
               }
             },
             () => {
@@ -96,7 +134,9 @@ export function Tracked(
               const tracked = this as unknown as ITracked;
               tracked.dirtyCounter--;
               if (tracked.dirtyCounter === 0 && tracked.trakrState === State.Changed) tracked._setState(State.Unchanged);
-              this.changed.emit({ property: propertyName, oldValue: newValue, newValue: oldValue });
+              const event = { property: propertyName, oldValue: newValue, newValue: oldValue };
+              this.beforeChange.emit(event);
+              this.afterChange.emit(event);
             },
             properties,
           );
@@ -143,9 +183,17 @@ export function Tracked(
             if (tracked.trakrState === State.Unchanged) tracked._setState(State.Changed);
             if (oldValue instanceof TrackedObject) oldValue._markRemoved();
             if (newValue instanceof TrackedObject) newValue._markAdded();
-            this.changed.emit({ property: propertyName, oldValue, newValue });
+            const event = { property: propertyName, oldValue, newValue };
+            if (!this.tracker._isReplaying && beforeHook) {
+              beforeHook(this, newValue, oldValue);
+            }
+            this.beforeChange.emit(event);
+            this.afterChange.emit(event);
             if (!this.tracker._isReplaying) {
-              this.trackedChanged.emit({ property: propertyName, oldValue, newValue });
+              this.trackedChanged.emit(event);
+            }
+            if (!this.tracker._isReplaying && afterHook) {
+              afterHook(this, newValue, oldValue);
             }
           },
           () => {
@@ -153,7 +201,9 @@ export function Tracked(
             const tracked = this as unknown as ITracked;
             tracked.dirtyCounter--;
             if (tracked.dirtyCounter === 0 && tracked.trakrState === State.Changed) tracked._setState(State.Unchanged);
-            this.changed.emit({ property: propertyName, oldValue: newValue, newValue: oldValue });
+            const event = { property: propertyName, oldValue: newValue, newValue: oldValue };
+            this.beforeChange.emit(event);
+            this.afterChange.emit(event);
           },
           properties,
         );

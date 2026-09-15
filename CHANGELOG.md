@@ -1,5 +1,36 @@
 # Changelog
 
+## [5.2.0] — 2026-09-15
+
+### New: `beforeChange` / `afterChange` events and change hooks
+
+Splits the single `onChange` decorator hook (and the single `.changed` event on `TrackedObject`) into an ordered pair — one that fires *before* internal event state is committed, and one that fires *after*.
+
+**The problem.** `@Tracked` and `@EventTracked` accepted a single `onChange` callback that fired *mid-setter* — before `.changed.emit(...)`, which is what `EventTracker` internally subscribes to in order to update event state. As a result, a callback that read `tracker.generateEvents()` did not see the change that triggered it. Consumers wiring auto-save patterns to `onChange` silently dropped the triggering edit from the persisted payload.
+
+Subscribers to `target.changed` never had that problem because the internal subscriber was registered first and ran before user subscribers — but the two subscription points *looked* symmetric, which is a footgun.
+
+**What's new.**
+
+1. Two events on every `TrackedObject`:
+   - `beforeChange` — fires before event state is committed. Reads to `tracker.generateEvents()` from this hook do not see the triggering change. Use for cascading mutations that should belong to the same logical operation as the trigger.
+   - `afterChange` — fires after event state is committed. Reads to `tracker.generateEvents()` from this hook include the triggering change. Use for auto-save, telemetry, network sync, and downstream re-render triggers.
+2. Both events fire on every write, including during undo and redo replays, and emit the same `{ property, oldValue, newValue }` payload.
+3. Decorator second argument is now a `{ beforeChange?, afterChange? }` object:
+   ```typescript
+   @Tracked(validator?, hooks?: { beforeChange?, afterChange? }, options?)
+   @EventTracked(validator?, hooks?: { beforeChange?, afterChange? }, options?)
+   ```
+4. Ordering per setter tick: underlying setter → `beforeChange` → internal event state update → `afterChange`.
+
+**Backwards compatibility.**
+
+- `target.changed` remains an alias for `target.afterChange` (same `TypedEvent` instance). Existing subscribers continue to see the safer post-commit event.
+- Passing a bare `onChange` function as the decorator's second argument is still accepted — it is mapped to `beforeChange` (preserving today's timing) and emits a one-time runtime deprecation warning nudging toward the object form.
+- No behavior change for accessors that pass no hooks, for `@Id` / `@AutoId`, collections, sessions, or the `generateEvents` shape.
+
+---
+
 ## [5.1.0] — 2026-09-07
 
 ### New: `tracker.discardPendingChanges()` — programmatically throw away all pending edits

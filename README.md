@@ -150,9 +150,12 @@ model.tag = 'active';
 tracker.undo(); // reverts tag AND removes 'active' from tags — one step
 ```
 
-**Case 1b — `@Tracked` with `onChange` callback**
+**Case 1b — `@Tracked` with change hooks**
 
-When side-effect logic needs to be kept separate from the setter body — or when using `accessor` fields where there is no setter body — pass an `onChange` callback as the second argument to `@Tracked()`. It receives `(self, newValue, oldValue)` and runs inside the tracked operation, so any `@Tracked` property writes or `TrackedCollection` mutations made inside it are automatically composed into the same undo step. The callback does not fire during undo or redo — the stored actions handle replay.
+When side-effect logic needs to be kept separate from the setter body — or when using `accessor` fields where there is no setter body — pass a `{ beforeChange, afterChange }` hooks object as the second argument to `@Tracked()`. Each hook receives `(self, newValue, oldValue)` and runs inside the tracked operation, so any `@Tracked` property writes or `TrackedCollection` mutations made inside them are automatically composed into the same undo step. Hooks do not fire during undo or redo — the stored actions handle replay.
+
+- **`beforeChange`** — fires *before* the change is committed to internal event state. Use this only for cascading mutations that must be recorded as part of the same operation as the trigger. Calling `tracker.generateEvents()` from `beforeChange` will not see the triggering change.
+- **`afterChange`** — fires *after* the change is committed. Use this for auto-save, telemetry, network sync, or any observer that needs `tracker.generateEvents()` to include the triggering change.
 
 ```typescript
 class TagModel extends TrackedObject {
@@ -160,9 +163,11 @@ class TagModel extends TrackedObject {
 
   @Tracked(
     undefined,
-    (self: TagModel, newValue, oldValue) => {
-      if (oldValue) self.tags.remove(oldValue);
-      if (newValue) self.tags.push(newValue);  // composed — same undo step as tag
+    {
+      beforeChange: (self: TagModel, newValue, oldValue) => {
+        if (oldValue) self.tags.remove(oldValue);
+        if (newValue) self.tags.push(newValue);  // composed — same undo step as tag
+      },
     },
   )
   accessor tag: string = '';
@@ -177,6 +182,8 @@ model.tag = 'active';
 
 tracker.undo(); // reverts tag AND removes 'active' from tags — one step
 ```
+
+> **Legacy form.** Passing a bare `onChange` function as the second argument still works — it is mapped to `beforeChange` and emits a one-time runtime deprecation warning. Migrate to the object form.
 
 **Case 2 — `TrackedCollection` event callbacks**
 
@@ -769,13 +776,15 @@ const invoice = tracker.construct(() => new InvoiceModel(tracker));
 | `dirtyCounter` | `number` | Net count of uncommitted property writes. Increments on each write, decrements on undo. Reset to `0` by `onCommit()`. Can be negative after undoing past a committed save |
 | `trakrIsValid` | `boolean` | `true` when all `@Tracked()` validators pass |
 | `validationMessages` | `Map<string, string>` | Maps property name → error message for each failing validator |
-| `changed` | `TypedEvent<TrackedPropertyChanged>` | Fires on every property change, including changes triggered by undo and redo |
+| `beforeChange` | `TypedEvent<TrackedPropertyChanged>` | Fires on every property change, *before* internal event state is committed. Subscribers do not see the triggering change in `tracker.generateEvents()`. Also fires during undo and redo |
+| `afterChange` | `TypedEvent<TrackedPropertyChanged>` | Fires on every property change, *after* internal event state is committed. Subscribers see the triggering change in `tracker.generateEvents()`. Also fires during undo and redo |
+| `changed` | `TypedEvent<TrackedPropertyChanged>` | Alias for `afterChange` (same `TypedEvent` instance). Retained for backwards compatibility |
 | `trackedChanged` | `TypedEvent<TrackedPropertyChanged>` | Fires only on direct user-initiated writes — never during undo or redo |
 | `destroy()` | `void` | Removes this model from the tracker |
 
 **Property change events**
 
-Both `changed` and `trackedChanged` carry a `TrackedPropertyChanged` payload:
+`beforeChange`, `afterChange`, `changed`, and `trackedChanged` all carry a `TrackedPropertyChanged` payload:
 
 ```typescript
 import type { TrackedPropertyChanged } from '@katn30/trakr';
@@ -788,15 +797,17 @@ import type { TrackedPropertyChanged } from '@katn30/trakr';
 | `oldValue` | The value before the write |
 | `newValue` | The value after the write |
 
-Both events fire synchronously **inside** the tracked operation, so any `@Tracked` property write made inside either listener is automatically composed into the same undo step as the triggering write (see [Automatic composing](#automatic-composing)).
+All events fire synchronously **inside** the tracked operation, so any `@Tracked` property write made inside a listener is automatically composed into the same undo step as the triggering write (see [Automatic composing](#automatic-composing)).
 
-The difference is when they fire:
-- `changed` fires on every write, including during undo and redo replays
-- `trackedChanged` fires only on direct user-initiated writes — never during undo or redo
+The differences:
+- `beforeChange` fires *before* internal event state is updated. Reads to `tracker.generateEvents()` from a `beforeChange` subscriber do **not** include the triggering change. Use this only when you need to cascade mutations that should belong to the same logical operation as the trigger.
+- `afterChange` (alias: `changed`) fires *after* internal event state is updated. Reads to `tracker.generateEvents()` from an `afterChange` subscriber **do** include the triggering change. This is the right hook for auto-save, telemetry, network sync, and downstream re-render triggers.
+- Both `beforeChange` and `afterChange` fire on every write, including during undo and redo replays.
+- `trackedChanged` fires only on direct user-initiated writes — never during undo or redo.
 
 ```typescript
-// changed — fires on initial write, undo, and redo; writes in callback are composed
-this.changed.subscribe(({ property }) => {
+// afterChange — fires on initial write, undo, and redo; writes in callback are composed
+this.afterChange.subscribe(({ property }) => {
   if (property === 'price' || property === 'quantity') {
     this.total = this.price * this.quantity; // composed into the same undo step
   }
@@ -1186,34 +1197,50 @@ invoice.status = 'draft'; // no-op
 **Signature**
 
 ```typescript
-@Tracked(validator?, onChange?, options?)
+@Tracked(validator?, hooks?, options?)
 ```
 
 | Parameter | Type | Applies to | Description |
 |---|---|---|---|
 | `validator` | `(self, newValue) => string \| undefined` | accessor, setter | Returns an error string on failure, `undefined` on success |
-| `onChange` | `(self, newValue, oldValue) => void` | accessor, setter | Side-effect callback. Runs inside the tracked operation — writes to other `@Tracked` properties or `TrackedCollection`s are composed into the same undo step. Does not fire during undo or redo |
+| `hooks` | `{ beforeChange?, afterChange? }` | accessor, setter | Side-effect callbacks. Both receive `(self, newValue, oldValue)` and run inside the tracked operation — writes to other `@Tracked` properties or `TrackedCollection`s are composed into the same undo step. Neither fires during undo or redo. Passing a bare function is accepted for backwards compatibility — it maps to `beforeChange` and emits a runtime deprecation warning |
 | `options.coalesceWithin` | `number` | accessor, setter | Maximum gap in ms between two consecutive writes to merge into one undo step. Omit to never coalesce |
+
+Choose `beforeChange` when you need cascading mutations recorded as part of the same operation. Choose `afterChange` when your side-effect needs to observe the change through `tracker.generateEvents()` (auto-save, telemetry, network sync, re-render triggers).
 
 ```typescript
 // validator only:
 @Tracked((_, v) => v < 0 ? 'Must be positive' : undefined)
 accessor price: number = 0;
 
-// onChange only — side effects composed into the same undo step:
+// beforeChange only — cascade composed into the same undo step:
 @Tracked(
   undefined,
-  (self: TagModel, newValue, oldValue) => {
-    if (oldValue) self.tags.remove(oldValue);
-    if (newValue) self.tags.push(newValue);
+  {
+    beforeChange: (self: TagModel, newValue, oldValue) => {
+      if (oldValue) self.tags.remove(oldValue);
+      if (newValue) self.tags.push(newValue);
+    },
   },
 )
 accessor tag: string = '';
 
-// validator + onChange + coalesceWithin:
+// afterChange — auto-save observing committed event state:
+@Tracked(
+  undefined,
+  {
+    afterChange: (self: MyModel) => { self.tracker.autoSave(); },
+  },
+)
+accessor status: string = '';
+
+// validator + both hooks + coalesceWithin:
 @Tracked(
   (_, v) => !v ? 'Required' : undefined,
-  (self: MyModel, newValue) => { self.log.push(newValue); },
+  {
+    beforeChange: (self: MyModel, newValue) => { self.log.push(newValue); },
+    afterChange:  (self: MyModel) => { self.tracker.autoSave(); },
+  },
   { coalesceWithin: 3000 },
 )
 accessor name: string = '';
@@ -1758,18 +1785,19 @@ tracker.onCommit();
 
 ### `@EventTracked`
 
-Drop-in replacement for `@Tracked` that adds an **event-type tag** as the first argument. Everything else — validator, `onChange`, `coalesceWithin`, undo/redo, dependency tracking, no-op detection — is identical.
+Drop-in replacement for `@Tracked` that additionally tags the field with an **event type** on `options`. Everything else — validator, change hooks, `coalesceWithin`, undo/redo, dependency tracking, no-op detection — is identical.
 
 ```typescript
-@EventTracked(eventType, validator?, onChange?, options?)
+@EventTracked(validator?, hooks?, options?)
 ```
 
 | Parameter | Type | Description |
 |---|---|---|
-| `eventType` | `string` (typically an enum value) | The tag this field contributes to |
 | `validator` | `(self, newValue) => string \| undefined` | Same as `@Tracked` |
-| `onChange` | `(self, newValue, oldValue) => void` | Same as `@Tracked` |
+| `hooks` | `{ beforeChange?, afterChange? }` | Same as `@Tracked`. Passing a bare function is accepted for backwards compatibility and maps to `beforeChange` |
+| `options.eventType` | `string` (typically an enum value) | The tag this field contributes to |
 | `options.coalesceWithin` | `number` | Same as `@Tracked` |
+| `options.history` | `HistoryConfig` | Turns the field into a history-tracked event stream |
 
 **Field-cluster grouping.** All fields on a class that share the same tag collapse into **one event**, whose payload contains **only the fields that are currently dirty relative to the last committed state**. Untouched fields are never included. `@Tracked` (untagged) fields continue to work — they participate in undo/redo/validation but do not contribute to event generation.
 

@@ -23,8 +23,18 @@ export abstract class TrackedObject implements ITracked, StateTarget {
 
   public readonly trakrId: number;
 
-  public readonly changed: TypedEvent<TrackedPropertyChanged> = new TypedEvent<TrackedPropertyChanged>();
+  public readonly beforeChange: TypedEvent<TrackedPropertyChanged> = new TypedEvent<TrackedPropertyChanged>();
+  public readonly afterChange: TypedEvent<TrackedPropertyChanged> = new TypedEvent<TrackedPropertyChanged>();
   public readonly trackedChanged: TypedEvent<TrackedPropertyChanged> = new TypedEvent<TrackedPropertyChanged>();
+
+  /**
+   * Alias for {@link afterChange} — the post-commit event. Subscribers see the
+   * change reflected in tracker.generateEvents(). Retained for backwards
+   * compatibility.
+   */
+  public get changed(): TypedEvent<TrackedPropertyChanged> {
+    return this.afterChange;
+  }
 
   // ---- StateTarget interface (internal) ----
 
