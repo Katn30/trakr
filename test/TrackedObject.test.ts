@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { TrackedObject } from "../src/TrackedObject";
+import { DirtyTrackedObject } from "../src/DirtyTrackedObject";
 import { Tracker } from "../src/Tracker";
 import { DirtyTracker } from "../src/DirtyTracker";
 import { Tracked } from "../src/Tracked";
@@ -9,7 +9,7 @@ import { Operation } from "../src/Operation";
 
 // ---- Models ----
 
-class InvoiceModel extends TrackedObject {
+class InvoiceModel extends DirtyTrackedObject {
   @Tracked()
   accessor status: string = "";
 
@@ -19,7 +19,7 @@ class InvoiceModel extends TrackedObject {
   readonly lines: TrackedCollection<string>;
 
   constructor(
-    tracker: Tracker,
+    tracker: DirtyTracker,
     initialStatus = "",
     initialLines: string[] = [],
     initialNote = "",
@@ -31,7 +31,7 @@ class InvoiceModel extends TrackedObject {
   }
 }
 
-class PersonModel extends TrackedObject {
+class PersonModel extends DirtyTrackedObject {
   private _name: string = "";
 
   get name(): string {
@@ -43,36 +43,36 @@ class PersonModel extends TrackedObject {
     this._name = value;
   }
 
-  constructor(tracker: Tracker, initialName = "") {
+  constructor(tracker: DirtyTracker, initialName = "") {
     super(tracker);
     this.name = initialName;
   }
 }
 
-class ValidatedModel extends TrackedObject {
+class ValidatedModel extends DirtyTrackedObject {
   @Tracked((_, v: string) => (!v ? "Required" : undefined))
   accessor status: string = "initial";
 
   @Tracked()
   accessor note: string = "";
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
-class RequiredNameModel extends TrackedObject {
+class RequiredNameModel extends DirtyTrackedObject {
   @Tracked((_, v: string) => (!v ? "Name is required" : undefined))
   accessor name: string = ""; // empty default → always invalid on construction
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
 // ---- Sequential changes ----
 
-describe("TrackedObject – sequential changes create separate undo steps", () => {
+describe("DirtyTrackedObject – sequential changes create separate undo steps", () => {
   it("two sequential property changes create two undo steps", () => {
     const tracker = new DirtyTracker();
     const invoice = tracker.construct(() => new InvoiceModel(tracker));
@@ -124,7 +124,7 @@ describe("TrackedObject – sequential changes create separate undo steps", () =
 
 // ---- Tracking suppression ----
 
-describe("TrackedObject – tracking suppression", () => {
+describe("DirtyTrackedObject – tracking suppression", () => {
   it("changes inside trackingSuppressed do not create undo entries", () => {
     const tracker = new DirtyTracker();
     const invoice = tracker.construct(() => new InvoiceModel(tracker));
@@ -192,7 +192,7 @@ describe("TrackedObject – tracking suppression", () => {
 
 // ---- @Tracked on get/set accessor ----
 
-describe("TrackedObject – @Tracked on get/set accessor", () => {
+describe("DirtyTrackedObject – @Tracked on get/set accessor", () => {
   it("change is tracked and undoable", () => {
     const tracker = new DirtyTracker();
     const person = tracker.construct(() => new PersonModel(tracker, "Alice"));
@@ -242,7 +242,7 @@ describe("TrackedObject – @Tracked on get/set accessor", () => {
 
 // ---- coalesceWithin on explicit setter ----
 
-class CoalesceSetterModel extends TrackedObject {
+class CoalesceSetterModel extends DirtyTrackedObject {
   private _note: string = "";
 
   get note(): string { return this._note; }
@@ -250,12 +250,12 @@ class CoalesceSetterModel extends TrackedObject {
   @Tracked(undefined, undefined, { coalesceWithin: 5000 })
   set note(value: string) { this._note = value; }
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
-describe("TrackedObject – coalesceWithin on explicit get/set pair", () => {
+describe("DirtyTrackedObject – coalesceWithin on explicit get/set pair", () => {
   it("rapid writes to the same setter merge into one undo step", () => {
     const tracker = new DirtyTracker();
     const model = tracker.construct(() => new CoalesceSetterModel(tracker));
@@ -271,7 +271,7 @@ describe("TrackedObject – coalesceWithin on explicit get/set pair", () => {
 
 // ---- Events ----
 
-describe("TrackedObject – isDirtyChanged", () => {
+describe("DirtyTrackedObject – isDirtyChanged", () => {
   it("fires with true when the tracker becomes dirty", () => {
     const tracker = new DirtyTracker();
     const invoice = tracker.construct(() => new InvoiceModel(tracker));
@@ -319,7 +319,7 @@ describe("TrackedObject – isDirtyChanged", () => {
   });
 });
 
-describe("TrackedObject – isValidChanged", () => {
+describe("DirtyTrackedObject – isValidChanged", () => {
   it("fires with false when the tracker becomes invalid", () => {
     const tracker = new DirtyTracker();
     const model = tracker.construct(() => new ValidatedModel(tracker));
@@ -368,7 +368,7 @@ describe("TrackedObject – isValidChanged", () => {
   });
 });
 
-describe("TrackedObject – canCommitChanged", () => {
+describe("DirtyTrackedObject – canCommitChanged", () => {
   it("fires with true when isDirty becomes true and isValid is already true", () => {
     const tracker = new DirtyTracker();
     const invoice = tracker.construct(() => new InvoiceModel(tracker));
@@ -430,9 +430,9 @@ describe("TrackedObject – canCommitChanged", () => {
   });
 });
 
-// ---- TrackedObject – construct() ----
+// ---- DirtyTrackedObject – construct() ----
 
-describe("TrackedObject – construct()", () => {
+describe("DirtyTrackedObject – construct()", () => {
   it("validates all objects and updates tracker.isValid after the lambda", () => {
     const tracker = new DirtyTracker();
     expect(tracker.isValid).toBe(true);
@@ -529,16 +529,16 @@ describe("TrackedObject – construct()", () => {
 
 // ---- Models for the sections below ----
 
-class CoalesceModel extends TrackedObject {
+class CoalesceModel extends DirtyTrackedObject {
   @Tracked(undefined, undefined, { coalesceWithin: 5000 })
   accessor note: string = "";
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
-class CapturingModel extends TrackedObject {
+class CapturingModel extends DirtyTrackedObject {
   capturedOp: Operation | undefined;
 
   @Tracked()
@@ -549,14 +549,14 @@ class CapturingModel extends TrackedObject {
     this.capturedOp = lastOp;
   }
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
 // ---- coalesceWithin option ----
 
-describe("TrackedObject — coalesceWithin option", () => {
+describe("DirtyTrackedObject — coalesceWithin option", () => {
   it("two rapid changes to the same property merge into one undo step", () => {
     const tracker = new DirtyTracker();
     const model = tracker.construct(() => new CoalesceModel(tracker));
@@ -587,12 +587,12 @@ describe("TrackedObject — coalesceWithin option", () => {
 
 // ---- no coalesceWithin: writes never merge ----
 
-class NumModel extends TrackedObject {
+class NumModel extends DirtyTrackedObject {
   @Tracked() accessor qty: number = 0;
-  constructor(t: Tracker) { super(t); }
+  constructor(t: DirtyTracker) { super(t); }
 }
 
-describe("TrackedObject — without coalesceWithin, writes never merge", () => {
+describe("DirtyTrackedObject — without coalesceWithin, writes never merge", () => {
   it("rapid changes to the same string property are separate undo steps", () => {
     const tracker = new DirtyTracker();
     const invoice = tracker.construct(() => new InvoiceModel(tracker));
@@ -623,7 +623,7 @@ describe("TrackedObject — without coalesceWithin, writes never merge", () => {
 
 // ---- _isInUndoStack ----
 
-describe("TrackedObject — Tracker._isInUndoStack()", () => {
+describe("DirtyTrackedObject — Tracker._isInUndoStack()", () => {
   it("returns true for an operation that is in the undo stack", () => {
     const tracker = new DirtyTracker();
     const model = tracker.construct(() => new CapturingModel(tracker));
@@ -671,27 +671,27 @@ describe("TrackedObject — Tracker._isInUndoStack()", () => {
 
 // ---- Tracker.deletedObjects ----
 
-class DeletableModel extends TrackedObject {
+class DeletableModel extends DirtyTrackedObject {
   @Tracked()
   accessor detail: DeletableModel | null = null;
 
-  constructor(tracker: Tracker) { super(tracker); }
+  constructor(tracker: DirtyTracker) { super(tracker); }
 }
 
 // ---- Single-property composition lifecycle ----
 
-class LeafModel extends TrackedObject {
+class LeafModel extends DirtyTrackedObject {
   @Tracked((_, v: string) => (!v ? "Required" : undefined))
   accessor name: string = "";
 
-  constructor(tracker: Tracker) { super(tracker); }
+  constructor(tracker: DirtyTracker) { super(tracker); }
 }
 
-class NodeModel extends TrackedObject {
+class NodeModel extends DirtyTrackedObject {
   @Tracked()
   accessor leaf: LeafModel | null = null;
 
-  constructor(tracker: Tracker) { super(tracker); }
+  constructor(tracker: DirtyTracker) { super(tracker); }
 }
 
 describe("Tracker.deletedObjects", () => {
@@ -791,7 +791,7 @@ describe("Tracker.deletedObjects", () => {
 
 // ---- Single-property composition lifecycle ----
 
-describe("TrackedObject — @Tracked single-property composition lifecycle", () => {
+describe("DirtyTrackedObject — @Tracked single-property composition lifecycle", () => {
   it("1. Assigned: child is tracked as Insert", () => {
     const tracker = new DirtyTracker();
     const node = tracker.construct(() => new NodeModel(tracker));

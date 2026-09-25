@@ -2,22 +2,22 @@ import { describe, it, expect } from "vitest";
 import { DirtyTracker } from "../src/DirtyTracker";
 import { Tracker } from "../src/Tracker";
 import { Tracked } from "../src/Tracked";
-import { TrackedObject } from "../src/TrackedObject";
+import { DirtyTrackedObject } from "../src/DirtyTrackedObject";
 import { TrackedCollection } from "../src/TrackedCollection";
-import { TrackedContainer } from "../src/TrackedContainer";
+import { DirtyTrackedContainer } from "../src/DirtyTrackedContainer";
 import { AutoId } from "../src/ExternallyAssigned";
 import { State } from "../src/State";
 
-class Child extends TrackedObject {
+class Child extends DirtyTrackedObject {
   @AutoId id: number = 0;
   @Tracked() accessor name: string = "";
-  constructor(t: Tracker) { super(t); }
+  constructor(t: DirtyTracker) { super(t); }
 }
 
-class Parent extends TrackedContainer {
+class Parent extends DirtyTrackedContainer {
   @Tracked() accessor phase: string = "a";
   readonly children: TrackedCollection<Child>;
-  constructor(t: Tracker) {
+  constructor(t: DirtyTracker) {
     super(t);
     this.children = new TrackedCollection<Child>(t, []);
     this.trackChild(this.children);

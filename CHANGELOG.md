@@ -1,5 +1,53 @@
 # Changelog
 
+## [8.0.0] — 2026-09-25
+
+### Breaking: `TrackedObject` split into `TrackedObject` (EventTracker) and `DirtyTrackedObject` (DirtyTracker)
+
+6.0 split the tracker, but models still shared one base class that carried batch-save state (`trakrState`, `dirtyCounter`, `isDirty`). Under an `EventTracker` that state was inert: it read `Unchanged` / `0` / `false` forever. Filters such as `trackedObjects.filter(o => o.trakrState === State.Insert)` compiled and silently returned nothing. The library kept the two modes apart with runtime guards on an internal `_tracksObjectState` flag.
+
+8.0 finishes the split at the model level:
+
+- **`TrackedObjectBase`** (abstract, shared) carries what every model has: `trakrId`, validation (`trakrIsValid`, `validationMessages`), the change events (`beforeChange`, `afterChange`, `changed`, `trackedChanged`) and `destroy()`.
+- **`TrackedObject extends TrackedObjectBase`**: models for an **`EventTracker`**. Its constructor takes an `EventTracker`. It has no object state; what is pending is the tracker's event list.
+- **`DirtyTrackedObject extends TrackedObjectBase`**: models for a **`DirtyTracker`**. Its constructor takes a `DirtyTracker`. It adds `trakrState`, `isDirty` and `dirtyCounter`, maintained by the state machine as before.
+- **Containers split the same way:** `TrackedContainer` (EventTracker, validity roll-up) and `DirtyTrackedContainer` (DirtyTracker, validity and dirtiness roll-up).
+- **Trackers expose precise types.** `DirtyTracker.trackedObjects`, `deletedObjects` and `getByTrackingId()` return `DirtyTrackedObject`s; `EventTracker.trackedObjects` and `getByTrackingId()` return `TrackedObject`s.
+- **Sessions:** `DirtyTracker.startSession()` returns a `DirtyTrackerSession`, which keeps `deletedObjects`. An `EventTracker` session has no `deletedObjects`.
+
+**The pairing is enforced.**
+- **At compile time:** passing a `DirtyTracker` to a `TrackedObject` (or the reverse) is a type error.
+- **At run time:** a tracker throws a `TypeError` naming the class if it is handed the wrong kind of model.
+- **Related restrictions:** `EventTrackedCollection` accepts only an `EventTracker`, and `@EventTracked` applies only to `TrackedObject` models.
+
+**Internals.** The `_tracksObjectState` flag and every guard that read it are gone. The state machine lives in `DirtyTrackedObject`, which overrides the lifecycle hooks of the base class.
+
+**Also fixed:** `trackChild(collection)` did not compile for any collection whose item type was not `unknown`. `TrackedCollection` is invariant in its item type, so `TrackedCollection<Item>` was not assignable to the parameter type `TrackedCollection<unknown>`. It went unnoticed because the test suite was not type-checked. `npm test` now type-checks `src` and `test` first (`npm run typecheck`), and a new test asserts the tracker/model contract with the TypeScript compiler.
+
+**Also fixed:** the package exported the `ITracked` interface as a value (`export { ITracked }`), leaving an always-`undefined` `ITracked` runtime export. It is now a type-only export; `import { ITracked }` / `import type { ITracked }` in TypeScript are unaffected. A new test pins the exact list of runtime exports.
+
+**Removed**
+- `trakrState`, `isDirty`, `dirtyCounter` on `TrackedObject` (EventTracker models).
+- `trakrState`, `isDirty`, `dirtyCounter` on `TrackedCollection`. They were constant: `Unchanged` / `false` / `0`.
+- `TrackerSession.deletedObjects`; use `DirtyTrackerSession.deletedObjects`.
+- From the `ITracked` interface: `trakrState`, `isDirty`, `dirtyCounter` and `_setState`.
+
+#### Migration (7.x → 8.0)
+
+| 7.x | 8.0 |
+|---|---|
+| `class M extends TrackedObject` used with a `DirtyTracker` | `class M extends DirtyTrackedObject`, `constructor(t: DirtyTracker)` |
+| `class M extends TrackedContainer` used with a `DirtyTracker` | `class M extends DirtyTrackedContainer`, `constructor(t: DirtyTracker)` |
+| `class M extends TrackedObject` used with an `EventTracker` | Unchanged; type the constructor `constructor(t: EventTracker)` |
+| `constructor(t: Tracker)` in a model | Name the concrete tracker |
+| Reading `trakrState` / `isDirty` / `dirtyCounter` on EventTracker models | Read `tracker.pendingEvents` / `tracker.events`, e.g. the events for a `trackingId` |
+| `session.deletedObjects` | `DirtyTracker` sessions only |
+| `@EventTracked` on a `DirtyTracker` model | `@Tracked` |
+
+For `DirtyTracker` users the change is a rename: `extends TrackedObject` → `extends DirtyTrackedObject`, and `TrackedContainer` → `DirtyTrackedContainer`. `EventTracker` users keep `extends TrackedObject` and lose only members that never carried information.
+
+---
+
 ## [7.0.1] — 2026-09-25
 
 > 7.0.0 was not published; this is the first 7.x release. Changes are listed against 6.0.0.

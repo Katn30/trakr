@@ -1,8 +1,6 @@
-import { TrackedObject } from "./TrackedObject";
+import { TrackedObjectBase } from "./TrackedObjectBase";
 import { OperationProperties } from "./OperationProperties";
 import { PropertyType } from "./PropertyType";
-import { ITracked } from "./ITracked";
-import { State } from "./State";
 import { registerPropertyValidator } from "./Registry";
 import { DependencyTracker } from "./DependencyTracker";
 
@@ -44,15 +42,15 @@ export function Tracked(
 ) {
   const { before: beforeHook, after: afterHook } = normalizeHooks(hooks);
 
-  function decorator<T extends TrackedObject, V>(
+  function decorator<T extends TrackedObjectBase, V>(
     target: ClassAccessorDecoratorTarget<T, V>,
     context: ClassAccessorDecoratorContext<T, V>,
   ): ClassAccessorDecoratorResult<T, V>;
-  function decorator<T extends TrackedObject, V>(
+  function decorator<T extends TrackedObjectBase, V>(
     target: (this: T, value: V) => void,
     context: ClassSetterDecoratorContext<T, V>,
   ): (this: T, value: V) => void;
-  function decorator<T extends TrackedObject, V>(
+  function decorator<T extends TrackedObjectBase, V>(
     target: (this: T) => V,
     context: ClassGetterDecoratorContext<T, V>,
   ): (this: T) => V;
@@ -110,11 +108,9 @@ export function Tracked(
           this.tracker._doAndTrack(
             () => {
               accessorTarget.set.call(this, newValue);
-              const tracked = this as unknown as ITracked;
-              tracked.dirtyCounter++;
-              if (this.tracker._tracksObjectState && tracked.trakrState === State.Unchanged) tracked._setState(State.Changed);
-              if (oldValue instanceof TrackedObject) oldValue._markRemoved();
-              if (newValue instanceof TrackedObject) newValue._markAdded();
+              (this as TrackedObjectBase)._onTrackedWrite();
+              if (oldValue instanceof TrackedObjectBase) oldValue._markRemoved();
+              if (newValue instanceof TrackedObjectBase) newValue._markAdded();
               const event = { property: propertyName, oldValue, newValue };
               if (!this.tracker._isReplaying && beforeHook) {
                 beforeHook(this, newValue, oldValue);
@@ -130,9 +126,7 @@ export function Tracked(
             },
             () => {
               accessorTarget.set.call(this, oldValue);
-              const tracked = this as unknown as ITracked;
-              tracked.dirtyCounter--;
-              if (tracked.dirtyCounter === 0 && tracked.trakrState === State.Changed) tracked._setState(State.Unchanged);
+              (this as TrackedObjectBase)._onTrackedWriteUndone();
               const event = { property: propertyName, oldValue: newValue, newValue: oldValue };
               this.beforeChange.emit(event);
               this.afterChange.emit(event);
@@ -176,11 +170,9 @@ export function Tracked(
         this.tracker._doAndTrack(
           () => {
             setterFn.call(this, newValue);
-            const tracked = this as unknown as ITracked;
-            tracked.dirtyCounter++;
-            if (this.tracker._tracksObjectState && tracked.trakrState === State.Unchanged) tracked._setState(State.Changed);
-            if (oldValue instanceof TrackedObject) oldValue._markRemoved();
-            if (newValue instanceof TrackedObject) newValue._markAdded();
+            (this as TrackedObjectBase)._onTrackedWrite();
+            if (oldValue instanceof TrackedObjectBase) oldValue._markRemoved();
+            if (newValue instanceof TrackedObjectBase) newValue._markAdded();
             const event = { property: propertyName, oldValue, newValue };
             if (!this.tracker._isReplaying && beforeHook) {
               beforeHook(this, newValue, oldValue);
@@ -196,9 +188,7 @@ export function Tracked(
           },
           () => {
             setterFn.call(this, oldValue);
-            const tracked = this as unknown as ITracked;
-            tracked.dirtyCounter--;
-            if (tracked.dirtyCounter === 0 && tracked.trakrState === State.Changed) tracked._setState(State.Unchanged);
+            (this as TrackedObjectBase)._onTrackedWriteUndone();
             const event = { property: propertyName, oldValue: newValue, newValue: oldValue };
             this.beforeChange.emit(event);
             this.afterChange.emit(event);

@@ -19,7 +19,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { TrackedObject } from "../src/TrackedObject";
+import { DirtyTrackedObject } from "../src/DirtyTrackedObject";
 import { State } from "../src/State";
 import { Tracker } from "../src/Tracker";
 import { DirtyTracker } from "../src/DirtyTracker";
@@ -27,20 +27,20 @@ import { Tracked } from "../src/Tracked";
 import { TrackedCollection } from "../src/TrackedCollection";
 import { AutoId } from "../src/ExternallyAssigned";
 
-class ItemModel extends TrackedObject {
+class ItemModel extends DirtyTrackedObject {
   @AutoId
   id: number = 0;
 
   @Tracked()
   accessor name: string = "";
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
 /** Creates an already-persisted item (state=Unchanged, id=realId). */
-function loadedItem(tracker: Tracker, realId: number): ItemModel {
+function loadedItem(tracker: DirtyTracker, realId: number): ItemModel {
   const item = tracker.construct(() => new ItemModel(tracker));
   tracker.withTrackingSuppressed(() => { item.id = realId; });
   return item;
@@ -48,7 +48,7 @@ function loadedItem(tracker: Tracker, realId: number): ItemModel {
 
 // ---- Insert ----
 
-describe("TrackedObject state transitions — Insert", () => {
+describe("DirtyTrackedObject state transitions — Insert", () => {
   it("new item added to collection: state=Insert, trackingId assigned at construction", () => {
     const tracker = new DirtyTracker();
     const items = new TrackedCollection<ItemModel>(tracker);
@@ -172,7 +172,7 @@ describe("TrackedObject state transitions — Insert", () => {
 
 // ---- Committed Insert undone ----
 
-describe("TrackedObject state transitions — committed Insert undone", () => {
+describe("DirtyTrackedObject state transitions — committed Insert undone", () => {
   it("push → commit(id=1) → state=Unchanged", () => {
     const tracker = new DirtyTracker();
     const items = new TrackedCollection<ItemModel>(tracker);
@@ -212,7 +212,7 @@ describe("TrackedObject state transitions — committed Insert undone", () => {
 
 // ---- Changed ----
 
-describe("TrackedObject state transitions — Changed", () => {
+describe("DirtyTrackedObject state transitions — Changed", () => {
   it("loaded item edited: state=Changed, id=real → PATCH with id", () => {
     const tracker = new DirtyTracker();
     const item = loadedItem(tracker, 10);
@@ -310,7 +310,7 @@ describe("TrackedObject state transitions — Changed", () => {
 
 // ---- Deleted ----
 
-describe("TrackedObject state transitions — Deleted", () => {
+describe("DirtyTrackedObject state transitions — Deleted", () => {
   it("loaded item removed: state=Deleted, id=real → DELETE with id", () => {
     const tracker = new DirtyTracker();
     const item = loadedItem(tracker, 10);
@@ -416,7 +416,7 @@ describe("TrackedObject state transitions — Deleted", () => {
 
 // ---- Insert collapsed by remove ----
 
-describe("TrackedObject state transitions — Insert collapsed by remove", () => {
+describe("DirtyTrackedObject state transitions — Insert collapsed by remove", () => {
   it("push → remove → state=Unchanged → skip (item was never persisted)", () => {
     const tracker = new DirtyTracker();
     const items = new TrackedCollection<ItemModel>(tracker);
@@ -458,7 +458,7 @@ describe("TrackedObject state transitions — Insert collapsed by remove", () =>
 
 // ---- @AutoId / trackingId ----
 
-describe("TrackedObject state transitions — @AutoId / trackingId", () => {
+describe("DirtyTrackedObject state transitions — @AutoId / trackingId", () => {
   it("every object gets a unique trackingId at construction", () => {
     const tracker = new DirtyTracker();
     const i1 = tracker.construct(() => new ItemModel(tracker));
@@ -536,7 +536,7 @@ describe("TrackedObject state transitions — @AutoId / trackingId", () => {
 
 // ---- Save operation routing ----
 
-describe("TrackedObject state transitions — save operation routing", () => {
+describe("DirtyTrackedObject state transitions — save operation routing", () => {
   /**
    * Mirrors the save loop a frontend would run over tracker.trackedObjects.
    * For temporal tables, Changed items also produce a new server PK.
@@ -607,7 +607,7 @@ describe("TrackedObject state transitions — save operation routing", () => {
 
 // ---- Reactivity gate on onCommit write-back ----
 
-describe("TrackedObject – onCommit @AutoId write-back reactivity gate", () => {
+describe("DirtyTrackedObject – onCommit @AutoId write-back reactivity gate", () => {
   it("onCommit writing @AutoId does not emit changed events on the object", () => {
     const tracker = new DirtyTracker();
     const items = new TrackedCollection<ItemModel>(tracker);
@@ -674,14 +674,14 @@ describe("Tracker – getByTrackingId", () => {
 
 // ---- IdAssignment<V> — non-number PK types ----
 
-class StringPkModel extends TrackedObject {
+class StringPkModel extends DirtyTrackedObject {
   @AutoId
   id: string = "";
 
   @Tracked()
   accessor name: string = "";
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }

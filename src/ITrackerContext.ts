@@ -1,4 +1,4 @@
-import { TrackedObject } from "./TrackedObject";
+import type { TrackedObjectBase } from "./TrackedObjectBase";
 import { TypedEvent } from "./TypedEvent";
 
 export interface ITrackerContext {
@@ -7,7 +7,7 @@ export interface ITrackerContext {
   canCommit: boolean;
   canUndo: boolean;
   canRedo: boolean;
-  trackedObjects: TrackedObject[];
+  trackedObjects: TrackedObjectBase[];
   undo(): void;
   redo(): void;
   isDirtyChanged: TypedEvent<boolean>;

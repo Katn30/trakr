@@ -252,3 +252,19 @@ describe("applyStateTransition — committed / undo — prevState Changed", () =
     expect(obj.trakrState).toBe(State.Changed);
   });
 });
+
+// ---- undo without context: the previous state defaults to Unchanged ----
+
+describe("applyStateTransition — undo without context", () => {
+  it("removed / undo restores Unchanged", () => {
+    const obj = makeTarget(State.Deleted);
+    applyStateTransition(obj, 'removed', 'undo');
+    expect(obj.trakrState).toBe(State.Unchanged);
+  });
+
+  it("committed / undo leaves the state as it is", () => {
+    const obj = makeTarget(State.Unchanged);
+    applyStateTransition(obj, 'committed', 'undo');
+    expect(obj.trakrState).toBe(State.Unchanged);
+  });
+});

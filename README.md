@@ -27,8 +27,7 @@ npm install @katn30/trakr
 ```typescript
 import {
   DirtyTracker,
-  Tracker,
-  TrackedObject,
+  DirtyTrackedObject,
   TrackedCollection,
   Tracked,
   AutoId,
@@ -36,7 +35,7 @@ import {
 
 const tracker = new DirtyTracker();
 
-class InvoiceModel extends TrackedObject {
+class InvoiceModel extends DirtyTrackedObject {
   @AutoId
   id: number = 0;
 
@@ -48,7 +47,7 @@ class InvoiceModel extends TrackedObject {
 
   readonly lines: TrackedCollection<string>;
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
     this.lines = new TrackedCollection(tracker);
   }
@@ -87,11 +86,12 @@ tracker.isDirty;   // false
 | Acknowledge | `onCommit(keys?)` — everything becomes `Unchanged` at once | `onCommit(events, keys?)` — only those events become `Committed` |
 | `isDirty` | Undo stack differs from the last commit | At least one `NotCommitted` event exists |
 | Undo after a save | Object becomes dirty again (e.g. committed insert → `Deleted`) | The event stays `Committed`; a compensating event is added |
-| `trakrState` | Meaningful | Always `Unchanged` |
+| Models extend | `DirtyTrackedObject` / `DirtyTrackedContainer` | `TrackedObject` / `TrackedContainer` |
+| Object state (`trakrState`, `isDirty`, `dirtyCounter`) | On every model | Does not exist — what is pending is the event list |
 
-Both share everything else: `@Tracked`, `TrackedObject`, `TrackedCollection`, `TrackedContainer`, validation, sessions, `construct()` / `new()`, coalescing, and `version`.
+Both share everything else: `@Tracked`, `TrackedCollection`, validation, sessions, `construct()` / `new()`, coalescing, and `version`.
 
-Type your models against the base class (`constructor(tracker: Tracker)`) so they work with either.
+Each model is written for one tracker, and the compiler enforces the pairing: a `DirtyTrackedObject` constructor takes a `DirtyTracker`, a `TrackedObject` constructor takes an `EventTracker`, and mixing them up is a type error (and a `TypeError` at run time). Both extend `TrackedObjectBase`, which carries what they share: `trakrId`, validation and the change events.
 
 ---
 
@@ -124,7 +124,7 @@ Multiple tracked writes can automatically land in the same undo step in three ca
 When a property's setter is decorated with `@Tracked`, the setter body runs as part of the tracked write. Any `@Tracked` property writes or `TrackedCollection` mutations made synchronously inside that setter body are automatically composed into the same undo step.
 
 ```typescript
-class NameModel extends TrackedObject {
+class NameModel extends DirtyTrackedObject {
   private _firstName: string = '';
   private _lastName: string = '';
 
@@ -150,11 +150,11 @@ tracker.undo(); // reverts firstName AND lastName together — one step
 The same applies when the setter mutates a `TrackedCollection`:
 
 ```typescript
-class TagModel extends TrackedObject {
+class TagModel extends DirtyTrackedObject {
   private _tag: string = '';
   readonly tags: TrackedCollection<string>;
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
     this.tags = new TrackedCollection(tracker);
   }
@@ -179,7 +179,7 @@ When side-effect logic needs to be kept separate from the setter body — or whe
 - **`afterChange`**: fires *after* it. Use this for observers of the value itself: telemetry, derived state, re-render triggers. On an `EventTracker`, the operation's events are recorded when the operation ends, after both hooks; for autosave, subscribe to `tracker.eventsChanged`.
 
 ```typescript
-class TagModel extends TrackedObject {
+class TagModel extends DirtyTrackedObject {
   readonly tags: TrackedCollection<string>;
 
   @Tracked(
@@ -193,7 +193,7 @@ class TagModel extends TrackedObject {
   )
   accessor tag: string = '';
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
     this.tags = new TrackedCollection(tracker);
   }
@@ -214,12 +214,12 @@ Use `changed` when you also want the callback to run during undo and redo. Use `
 
 ```typescript
 // Using changed — fires on initial write, undo, and redo
-class OrderModel extends TrackedObject {
+class OrderModel extends DirtyTrackedObject {
   @Tracked() accessor itemCount: number = 0;
 
   readonly items: TrackedCollection<string>;
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
     this.items = new TrackedCollection(tracker);
     this.items.changed.subscribe(() => {
@@ -232,12 +232,12 @@ order.items.push('x');  // itemCount becomes 1
 tracker.undo();         // items back to [], itemCount back to 0
 
 // Using trackedChanged — fires only on initial write, writes still composed
-class LoggedCollection extends TrackedObject {
+class LoggedCollection extends DirtyTrackedObject {
   @Tracked() accessor lastAdded: string = '';
 
   readonly items: TrackedCollection<string>;
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
     this.items = new TrackedCollection(tracker);
     this.items.trackedChanged.subscribe((e) => {
@@ -247,17 +247,17 @@ class LoggedCollection extends TrackedObject {
 }
 ```
 
-The same applies to `TrackedObject.trackedChanged`. A subscriber that writes to another `@Tracked` property is composed into the same undo step:
+The same applies to `trackedChanged`. A subscriber that writes to another `@Tracked` property is composed into the same undo step:
 
 ```typescript
-class TitleModel extends TrackedObject {
+class TitleModel extends DirtyTrackedObject {
   @Tracked() accessor summary: string = '';
 
   private _title: string = '';
   get title(): string { return this._title; }
   @Tracked() set title(value: string) { this._title = value; }
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
     this.trackedChanged.subscribe(({ property, newValue }) => {
       if (property === 'title') {
@@ -457,7 +457,7 @@ class InvoiceModel extends TrackedObject {
   @EventTracked(undefined, undefined, { eventType: 'InvoiceCreated' })
   accessor status: string = '';
 
-  constructor(tracker: Tracker, data?: { status: string }) {
+  constructor(tracker: EventTracker, data?: { status: string }) {
     super(tracker);
     if (data) {
       this.status = data.status; // suppressed when called via tracker.construct()
@@ -492,9 +492,9 @@ This catches accidental bare `new MyModel(tracker)` calls at the earliest possib
 
 ### Default state: Unchanged
 
-> This section and the next three — object state, the Insert/Delete lifecycle, and the save pattern — describe `DirtyTracker`. On an `EventTracker` objects stay `Unchanged`; pending work is expressed as events instead (see [Event generation](#event-generation-opt-in)).
+> This section and the next three — object state, the Insert/Delete lifecycle, and the save pattern — describe `DirtyTracker` and its `DirtyTrackedObject` models. `EventTracker` models (`TrackedObject`) have no object state; pending work is expressed as events instead (see [Event generation](#event-generation-opt-in)).
 
-`TrackedObject` defaults to `Unchanged` at construction time. This matches the most common scenario — objects are loaded from the database and are already persisted.
+A `DirtyTrackedObject` starts as `Unchanged`. This matches the most common scenario — objects are loaded from the database and are already persisted.
 
 ```typescript
 const item = tracker.construct(() => new ItemModel(tracker)); // state: Unchanged (DB-loaded default)
@@ -520,7 +520,7 @@ State transitions to `Insert` and `Deleted` are triggered by two mechanisms: col
 
 **Via TrackedCollection**
 
-Adding or removing a `TrackedObject` from a `TrackedCollection` transitions its state automatically:
+Adding or removing a `DirtyTrackedObject` from a `TrackedCollection` transitions its state automatically:
 
 ```typescript
 const item = tracker.construct(() => new ItemModel(tracker)); // Unchanged
@@ -536,14 +536,14 @@ Removing an item whose state is `Insert` collapses it as if it had never existed
 
 **Via @Tracked property**
 
-When a `@Tracked` property holds a `TrackedObject` value, assigning to it has the same effect: the outgoing value transitions to `Deleted` (or `Unchanged` if it was `Insert`), and the incoming value transitions to `Insert`:
+When a `@Tracked` property holds a `DirtyTrackedObject` value, assigning to it has the same effect: the outgoing value transitions to `Deleted` (or `Unchanged` if it was `Insert`), and the incoming value transitions to `Insert`:
 
 ```typescript
-class OrderModel extends TrackedObject {
+class OrderModel extends DirtyTrackedObject {
   @Tracked()
   accessor detail: DetailModel | null = null;
 
-  constructor(tracker: Tracker) { super(tracker); }
+  constructor(tracker: DirtyTracker) { super(tracker); }
 }
 
 const order = tracker.construct(() => new OrderModel(tracker));
@@ -567,7 +567,7 @@ State transitions respect tracking suppression. Inside `tracker.construct()` and
 
 ### Object state machine
 
-Every `TrackedObject` has a `trakrState: State` property — the single source of truth for what the save layer needs to do with that object. State transitions are driven by three types of events:
+Every `DirtyTrackedObject` has a `trakrState: State` property — the single source of truth for what the save layer needs to do with that object. State transitions are driven by three types of events:
 
 - **edit** — a `@Tracked` property is written
 - **collection mutation** — the object is pushed to or removed from a `TrackedCollection`
@@ -616,7 +616,7 @@ trakr does not mandate a specific save strategy — you can send changes per-obj
 
 That said, a pattern that works well with trakr's design is **all-or-nothing saves**: when the user clicks Save, the frontend collects every dirty object across the tracker, serialises them into a single request, and the backend saves everything inside one transaction — either succeeding fully or returning an error without applying partial changes. The frontend then calls `tracker.onCommit()` only on success.
 
-Every `TrackedObject` has a `trakrId` — a positive integer assigned at construction time, stable for the lifetime of the object, unique across the tracker. Include `trakrId` in the save payload for `Insert` and `Changed` items. The backend echoes it back alongside the server-assigned PK for any item that produced a new row. `onCommit(keys)` then iterates every entry in `keys`, matches by `trakrId`, and writes the real PK to the `@AutoId` field of any match — regardless of whether the item was `Insert` or `Changed`.
+Every model has a `trakrId` — a positive integer assigned at construction time, stable for the lifetime of the object, unique across the tracker. Include `trakrId` in the save payload for `Insert` and `Changed` items. The backend echoes it back alongside the server-assigned PK for any item that produced a new row. `onCommit(keys)` then iterates every entry in `keys`, matches by `trakrId`, and writes the real PK to the `@AutoId` field of any match — regardless of whether the item was `Insert` or `Changed`.
 
 New objects can reference each other via their `trakrId` in the payload (e.g. a new parent and its new children share consistent temp IDs before the server assigns real ones). After a successful save, `tracker.onCommit(keys)` updates all matched objects in place — no page reload is needed. This is the intended experience for form-heavy back-office pages, though reloading or restructuring state on save is equally valid.
 
@@ -652,8 +652,8 @@ const tracker = new DirtyTracker();
 | `canCommitChanged` | `TypedEvent<boolean>` | Fires whenever `canCommit` changes |
 | `version` | `number` | Monotonically changing counter — starts at `0`, increments on every new operation, decrements on undo, increments on redo. Auto-coalesced writes do not increment `version` (no new undo step is created) but still emit `versionChanged` |
 | `versionChanged` | `TypedEvent<number>` | Fires on every tracked write, undo, and redo — including auto-coalesced writes where `version` does not change. Use this as the notification signal for external subscribers such as React's `useSyncExternalStore` |
-| `trackedObjects` | `TrackedObject[]` | All registered models. Read-only — iterate for save payloads; do not mutate directly |
-| `deletedObjects` | `TrackedObject[]` | **`DirtyTracker` only.** Subset of `trackedObjects` where `state === Deleted`. Use this to build delete requests — deleted objects are removed from collections and composed properties, making them unreachable from the model tree |
+| `trackedObjects` | `DirtyTrackedObject[]` (`TrackedObject[]` on an `EventTracker`) | All registered models. Read-only — iterate for save payloads; do not mutate directly |
+| `deletedObjects` | `DirtyTrackedObject[]` | **`DirtyTracker` only.** Subset of `trackedObjects` where `state === Deleted`. Use this to build delete requests — deleted objects are removed from collections and composed properties, making them unreachable from the model tree |
 | `trackedCollections` | `TrackedCollection<any>[]` | All registered collections. Read-only — do not mutate directly |
 
 **Undo / redo**
@@ -702,7 +702,7 @@ session.canRedo;        // delegates to tracker
 session.undo();         // delegates to tracker
 session.redo();         // delegates to tracker
 session.trackedObjects; // objects in scope ([] when no scope)
-session.deletedObjects; // scoped objects in Deleted state
+session.deletedObjects; // DirtyTracker sessions only: scoped objects in Deleted state
 session.isDirtyChanged;    // same event as tracker.isDirtyChanged
 session.canCommitChanged;  // same event as tracker.canCommitChanged
 session.versionChanged;    // same event as tracker.versionChanged
@@ -776,29 +776,32 @@ function InvoiceForm({ tracker, invoice }: { tracker: Tracker; invoice: InvoiceM
 
 ---
 
-### `TrackedObject`
+### `TrackedObject` / `DirtyTrackedObject`
 
-The abstract base class for all trackable models. All subclass instances must be created via `tracker.construct()`.
+Models extend one of two abstract classes, depending on their tracker. Both extend `TrackedObjectBase` and must be created via `tracker.construct()` or `tracker.new()`.
 
 ```typescript
-class InvoiceModel extends TrackedObject {
-  constructor(tracker: Tracker) {
+class InvoiceModel extends DirtyTrackedObject {     // for a DirtyTracker
+  constructor(tracker: DirtyTracker) {
     super(tracker); // registers the model with the tracker
+  }
+}
+
+class IssueModel extends TrackedObject {            // for an EventTracker
+  constructor(tracker: EventTracker) {
+    super(tracker);
   }
 }
 
 const invoice = tracker.construct(() => new InvoiceModel(tracker));
 ```
 
-**Model properties and methods**
+**Members of every model (`TrackedObjectBase`)**
 
 | Member | Type | Description |
 |---|---|---|
-| `tracker` | `Tracker` | The tracker this model belongs to (set via `super(tracker)`) |
-| `trakrState` | `State` | The current persistence state — `Unchanged`, `Insert`, `Changed`, or `Deleted` |
-| `trakrId` | `number` | Positive client-assigned identifier, unique across the tracker, set at construction and never changed. Include in the save payload for `Insert` and `Changed` items so the backend can return the new server PK |
-| `isDirty` | `boolean` | `true` when this model has uncommitted property changes |
-| `dirtyCounter` | `number` | Net count of uncommitted property writes. Increments on each write, decrements on undo. Reset to `0` by `onCommit()`. Can be negative after undoing past a committed save |
+| `tracker` | `DirtyTracker` / `EventTracker` | The tracker this model belongs to (set via `super(tracker)`) |
+| `trakrId` | `number` | Positive client-assigned identifier, unique across the tracker, set at construction and never changed. Include it in the save payload so the backend can return the new server PK |
 | `trakrIsValid` | `boolean` | `true` when all `@Tracked()` validators pass |
 | `validationMessages` | `Map<string, string>` | Maps property name → error message for each failing validator |
 | `beforeChange` | `TypedEvent<TrackedPropertyChanged>` | Fires on every property change, *before* the new value is recorded in internal event state. Also fires during undo and redo |
@@ -806,6 +809,16 @@ const invoice = tracker.construct(() => new InvoiceModel(tracker));
 | `changed` | `TypedEvent<TrackedPropertyChanged>` | Alias for `afterChange` (same `TypedEvent` instance). Retained for backwards compatibility |
 | `trackedChanged` | `TypedEvent<TrackedPropertyChanged>` | Fires only on direct user-initiated writes — never during undo or redo |
 | `destroy()` | `void` | Removes this model from the tracker |
+
+**Additional members of a `DirtyTrackedObject`**
+
+| Member | Type | Description |
+|---|---|---|
+| `trakrState` | `State` | The current persistence state — `Unchanged`, `Insert`, `Changed`, or `Deleted` |
+| `isDirty` | `boolean` | `true` when this model has uncommitted property changes |
+| `dirtyCounter` | `number` | Net count of uncommitted property writes. Increments on each write, decrements on undo. Reset to `0` by `onCommit()`. Can be negative after undoing past a committed save |
+
+A `TrackedObject` has none of these: on an `EventTracker`, what is pending is the event list (`tracker.pendingEvents`). To find what a model has added, removed or changed, read the events for its `trackingId`.
 
 **Property change events**
 
@@ -870,9 +883,9 @@ For the full set of transitions between these states — driven by edits, collec
 Objects default to `Unchanged`. Property values set inside the constructor are suppressed by `tracker.construct()`:
 
 ```typescript
-class InvoiceModel extends TrackedObject {
+class InvoiceModel extends DirtyTrackedObject {
   @Tracked() accessor status: string = '';
-  constructor(tracker: Tracker, data?: { status: string }) {
+  constructor(tracker: DirtyTracker, data?: { status: string }) {
     super(tracker);
     if (data) this.status = data.status; // suppressed — not tracked
   }
@@ -889,16 +902,16 @@ Iterate `tracker.trackedObjects`, read `trakrState` and the appropriate ID on ea
 > Deleted objects are no longer reachable through your model graph — a `TrackedCollection` removes them from its array, and a `@Tracked` property set to `null` (or replaced with another object) removes the reference. The tracker holds every registered object regardless of its state, so iterating `trackedObjects` is the only way to reach objects that need a DELETE request. `tracker.deletedObjects` is a convenience getter for the deleted subset only, but both approaches work.
 
 ```typescript
-import { DirtyTracker, Tracker, TrackedObject, State, Tracked, AutoId, TrackedCollection } from '@katn30/trakr';
+import { DirtyTracker, Tracker, DirtyTrackedObject, State, Tracked, AutoId, TrackedCollection } from '@katn30/trakr';
 
-class InvoiceModel extends TrackedObject {
+class InvoiceModel extends DirtyTrackedObject {
   @AutoId
   id: number = 0;
 
   @Tracked()
   accessor status: string = '';
 
-  constructor(tracker: Tracker, data?: { id: number; status: string }) {
+  constructor(tracker: DirtyTracker, data?: { id: number; status: string }) {
     super(tracker);
     if (data) {
       this.id = data.id;
@@ -972,14 +985,14 @@ Marks a property as the server-assigned autoincrement primary key for this model
 `@AutoId` is a **specialisation of `@Id`**: it also registers the property as part of the model's identity (so `getIdentity(obj)` includes it), but it additionally singles the property out as the one trakr will overwrite from `onCommit(keys)`. Use `@Id` for identity properties you assign yourself; use `@AutoId` for the single property trakr should patch on commit. See [`@Id`](#id) for identity-only properties (composite keys, caller-assigned UUIDs, natural keys).
 
 ```typescript
-class InvoiceModel extends TrackedObject {
+class InvoiceModel extends DirtyTrackedObject {
   @AutoId
   id: number = 0;
 
   @Tracked()
   accessor status: string = '';
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
@@ -1012,7 +1025,7 @@ tracker.onCommit(serverIds);
 
 `trakrId` values are globally unique across the lifetime of the tracker and never reused, so they can safely serve as correlation keys across multiple save cycles.
 
-**Reactivity gate.** The `@AutoId` write performed by `onCommit(keys)` is a **library-internal write, not a user edit**. It does **not** fire `TrackedObject.changed` for the `@AutoId` property, does **not** bump `dirtyCounter`, does **not** re-run `@Tracked` validators, and does **not** flicker `tracker.isDirty` back to `true` during commit. After `onCommit` returns, `trakrState === Unchanged` and `isDirty === false` — as if the object were freshly loaded with the real PK. Treat the write as *authoritative baseline update*, not as a change event.
+**Reactivity gate.** The `@AutoId` write performed by `onCommit(keys)` is a **library-internal write, not a user edit**. It does **not** fire `changed` for the `@AutoId` property, does **not** bump `dirtyCounter`, does **not** re-run `@Tracked` validators, and does **not** flicker `tracker.isDirty` back to `true` during commit. After `onCommit` returns, `trakrState === Unchanged` and `isDirty === false` — as if the object were freshly loaded with the real PK. Treat the write as *authoritative baseline update*, not as a change event.
 
 ---
 
@@ -1021,7 +1034,7 @@ tracker.onCommit(serverIds);
 Marks a property as part of the model's **caller-provided identity**. Any type is allowed (string, number, UUID, ULID, tuple-like composite via multiple decorators). Trakr never mutates the value — you set it (typically from the server, or client-generated for UUID schemas), and trakr uses it purely to compute `getIdentity(obj)`, `getIdentityObject(obj)`, and `getIdentityProperties(proto)`.
 
 ```typescript
-class TenantModel extends TrackedObject {
+class TenantModel extends DirtyTrackedObject {
   @Id
   code: string = '';        // caller-assigned string PK
 
@@ -1029,7 +1042,7 @@ class TenantModel extends TrackedObject {
   accessor name: string = '';
 }
 
-class LineItemModel extends TrackedObject {
+class LineItemModel extends DirtyTrackedObject {
   @Id
   orderId: number = 0;      // composite key part 1
   @Id
@@ -1055,23 +1068,22 @@ Use `@Id` for identity you own (client-generated UUIDs, natural keys, composite 
 
 ### `ITracked`
 
-The common interface implemented by both `TrackedObject` and `TrackedCollection`. Useful for writing utility functions that accept either:
+The common interface implemented by every model and by `TrackedCollection`. Useful for utility functions that accept either:
 
 ```typescript
 import { ITracked } from '@katn30/trakr';
 
-function isReady(item: ITracked): boolean {
-  return item.isDirty && item.trakrIsValid;
+function detach(item: ITracked): void {
+  item.destroy();
 }
 ```
 
 | Member | Type | Description |
 |---|---|---|
 | `tracker` | `Tracker` | The tracker this object belongs to |
-| `isDirty` | `boolean` | `true` when there are uncommitted changes |
-| `dirtyCounter` | `number` | Net count of uncommitted writes |
-| `trakrState` | `State` | Current persistence state (always `Unchanged` for collections) |
 | `destroy()` | `void` | Removes this object from the tracker |
+
+Object state (`trakrState`, `isDirty`, `dirtyCounter`) is not part of `ITracked`: it exists only on `DirtyTrackedObject`. Collections carry no state of their own.
 
 ---
 
@@ -1105,7 +1117,7 @@ The property decorator. Intercepts every write, records an undo/redo pair, and o
 **With `accessor` (recommended):**
 
 ```typescript
-class ProductModel extends TrackedObject {
+class ProductModel extends DirtyTrackedObject {
   @Tracked()
   accessor name: string = '';
 
@@ -1121,7 +1133,7 @@ class ProductModel extends TrackedObject {
   @Tracked()
   accessor createdAt: Date = new Date();
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
@@ -1130,7 +1142,7 @@ class ProductModel extends TrackedObject {
 **With `get`/`set`** — decorate the setter:
 
 ```typescript
-class ProductModel extends TrackedObject {
+class ProductModel extends DirtyTrackedObject {
   private _name: string = '';
 
   get name(): string { return this._name; }
@@ -1138,7 +1150,7 @@ class ProductModel extends TrackedObject {
   @Tracked()
   set name(value: string) { this._name = value; }
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
@@ -1149,7 +1161,7 @@ class ProductModel extends TrackedObject {
 When the setter contains side-effect logic that must stay intact (e.g. cascading writes to other properties), decorate both the getter and the setter. The getter decoration registers `isEnabled` as a dependency source — any validator that reads it will automatically re-run when the setter fires. The setter decoration handles undo/redo as usual.
 
 ```typescript
-class RuleModel extends TrackedObject {
+class RuleModel extends DirtyTrackedObject {
   private _isEnabled: boolean = false;
 
   @Tracked()
@@ -1170,7 +1182,7 @@ class RuleModel extends TrackedObject {
   )
   accessor scheduleDays: string = '';
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
@@ -1185,7 +1197,7 @@ When `isEnabled` is set to `true`, `scheduleDays`'s validator automatically re-r
 The validator receives the model instance and the incoming value. Return an error string to fail, `undefined` to pass.
 
 ```typescript
-class OrderModel extends TrackedObject {
+class OrderModel extends DirtyTrackedObject {
   @Tracked((self, value) => !value ? 'Status is required' : undefined)
   accessor status: string = '';
 
@@ -1198,7 +1210,7 @@ class OrderModel extends TrackedObject {
   )
   accessor discount: number = 0;
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
@@ -1385,35 +1397,35 @@ items.trackedChanged.subscribe((e) => {
 
 ---
 
-### `TrackedContainer`
+### `DirtyTrackedContainer` / `TrackedContainer`
 
-An abstract base class that extends `TrackedObject` with the ability to **compose child objects and collections into a single validity and dirty check**.
+Abstract base classes that let a model **compose child objects and collections into a single validity check** — and, for `DirtyTrackedContainer`, a single dirty check. `DirtyTrackedContainer` extends `DirtyTrackedObject` (for a `DirtyTracker`); `TrackedContainer` extends `TrackedObject` (for an `EventTracker`) and aggregates validity only. The examples below use `DirtyTrackedContainer`; `TrackedContainer` works the same way.
 
-Extend it when a model owns children whose `isValid` and `isDirty` state should roll up to the parent — for example, a form section that has its own validated fields and owns a collection of sub-items.
+Extend one when a model owns children whose validity (and dirtiness) should roll up to the parent — for example, a form section that has its own validated fields and owns a collection of sub-items.
 
 **Simple example: one section, one owned child object**
 
 ```typescript
 import {
-  TrackedContainer,
-  TrackedObject,
+  DirtyTrackedContainer,
+  DirtyTrackedObject,
   Tracked,
   DirtyTracker,
   Tracker,
 } from '@katn30/trakr';
 
-class SubtaskDraft extends TrackedObject {
+class SubtaskDraft extends DirtyTrackedObject {
   @Tracked((_, v: string) => (!v ? 'Name required' : undefined))
   accessor name: string = '';
 
-  constructor(tracker: Tracker) { super(tracker); }
+  constructor(tracker: DirtyTracker) { super(tracker); }
 }
 
-class ActionsSection extends TrackedContainer {
+class ActionsSection extends DirtyTrackedContainer {
   @Tracked((_, v: string) => (!v ? 'Owner required' : undefined))
   accessor owner: string = '';
 
-  constructor(tracker: Tracker, subtask: SubtaskDraft) {
+  constructor(tracker: DirtyTracker, subtask: SubtaskDraft) {
     super(tracker);
     this.trackChild(subtask);  // register the child object
   }
@@ -1435,20 +1447,20 @@ section.trakrIsValid;    // true  — both own field and child are now valid
 When `trackChild` receives a `TrackedCollection`, every item already in the collection is tracked immediately, and items pushed or removed later are tracked/untracked automatically — including across undo and redo.
 
 ```typescript
-class SubtaskDraft extends TrackedObject {
+class SubtaskDraft extends DirtyTrackedObject {
   @Tracked((_, v: string) => (!v ? 'Name required' : undefined))
   accessor name: string = '';
 
-  constructor(tracker: Tracker) { super(tracker); }
+  constructor(tracker: DirtyTracker) { super(tracker); }
 }
 
-class ActionsSection extends TrackedContainer {
+class ActionsSection extends DirtyTrackedContainer {
   @Tracked((_, v: string) => (!v ? 'Owner required' : undefined))
   accessor owner: string = '';
 
   readonly subtasks: TrackedCollection<SubtaskDraft>;
 
-  constructor(tracker: Tracker, subtasks: TrackedCollection<SubtaskDraft>) {
+  constructor(tracker: DirtyTracker, subtasks: TrackedCollection<SubtaskDraft>) {
     super(tracker);
     this.subtasks = subtasks;
     this.trackChild(subtasks);  // registers the collection AND its items
@@ -1475,12 +1487,12 @@ section.trakrIsValid;    // true  — invalid item removed, nothing left to fail
 
 **`protected trackChild(child)`**
 
-Registers a `TrackedObject` or `TrackedCollection` as a child. Call it from the subclass constructor. A container can have any number of children.
+Registers a model or `TrackedCollection` as a child. Call it from the subclass constructor. A container can have any number of children.
 
 When `child` is a **`TrackedCollection`**, `trackChild` does three things automatically:
 
 1. Registers the collection itself (so its own validator, if any, contributes to `trakrIsValid`).
-2. Registers every `TrackedObject` already inside the collection as a child.
+2. Registers every model already inside the collection as a child.
 3. Subscribes to `collection.changed` so that items pushed in later are added to tracking and items removed are dropped from tracking — including across undo and redo.
 
 This means item-level validity and dirty state propagate to the container without any extra wiring: an invalid item anywhere in a registered collection makes `container.trakrIsValid` false, and fixing that item makes it true again.
@@ -1489,7 +1501,7 @@ This means item-level validity and dirty state propagate to the container withou
 
 Removes a previously registered child. The symmetric counterpart to `trackChild`.
 
-- For a `TrackedObject` child: removes it from the container's child list.
+- For a model child: removes it from the container's child list.
 - For a `TrackedCollection` child: removes the collection, unsubscribes from its `changed` event, and removes all items currently in the collection from the child list. Items pushed to the collection after this call are ignored.
 
 Calling `untrackChild` on a child that was never registered is a no-op.
@@ -1503,21 +1515,21 @@ Returns `true` when all of the following hold:
 
 This is a per-object read — it does not affect `tracker.isValid`, which is already correct because each child calls `tracker._onValidityChanged` independently.
 
-**`isDirty`**
+**`isDirty`** (`DirtyTrackedContainer` only)
 
 Returns `true` when:
 
 - The container has its own uncommitted field changes (`_dirtyCounter !== 0`), OR
-- Any registered `TrackedObject` child has uncommitted field changes
+- Any registered `DirtyTrackedObject` child has uncommitted field changes
 
-**Multi-level trees: `TrackedContainer` must be used at every intermediate node**
+**Multi-level trees: a container must be used at every intermediate node**
 
 `container.trakrIsValid` checks each registered child by calling `child.trakrIsValid`. What that call returns depends on what `child` is:
 
-- If `child` is a **`TrackedContainer`**, `child.trakrIsValid` also walks *its* registered children — and so on down the tree. Invalidity at any leaf propagates upward automatically.
-- If `child` is a plain **`TrackedObject`**, `child.trakrIsValid` reflects only that object's own `@Tracked` validators — its children (if any) are invisible to the parent container.
+- If `child` is a **container**, `child.trakrIsValid` also walks *its* registered children — and so on down the tree. Invalidity at any leaf propagates upward automatically.
+- If `child` is a plain model, `child.trakrIsValid` reflects only that object's own `@Tracked` validators — its children (if any) are invisible to the parent container.
 
-This means every intermediate node in the tree must extend `TrackedContainer` and register its own children, or validity will not propagate past that node.
+This means every intermediate node in the tree must extend a container class and register its own children, or validity will not propagate past that node.
 
 ```
 ✓ Correct — every intermediate node is a TrackedContainer
@@ -1554,11 +1566,11 @@ This means every intermediate node in the tree must extend `TrackedContainer` an
 
 In the broken example, `issueForm.trakrIsValid` calls `mainSection.trakrIsValid`, which returns `mainSection._isValid` (own fields only). `AnalysisBlock` is never consulted. A required `summary` field staying empty will not prevent a save.
 
-The fix is to make `MainSection` a `TrackedContainer` and add `this.trackChild(analysisBlock)` in its constructor.
+The fix is to make `MainSection` a container and add `this.trackChild(analysisBlock)` in its constructor.
 
-**When to use `TrackedContainer` vs reading `tracker.isValid`**
+**When to use a container vs reading `tracker.isValid`**
 
-`tracker.isValid` aggregates validity across the entire tracker — all models, all collections. `TrackedContainer.trakrIsValid` gives a per-section validity that you can bind directly to a UI element (an error badge, a "section incomplete" indicator) without scanning the whole tracker.
+`tracker.isValid` aggregates validity across the entire tracker — all models, all collections. A container's `trakrIsValid` gives a per-section validity that you can bind directly to a UI element (an error badge, a "section incomplete" indicator) without scanning the whole tracker.
 
 ```typescript
 // Drive a section error badge in React
@@ -1570,7 +1582,7 @@ return <SectionHeader hasError={!section.trakrIsValid} />;
 
 ### `TypedEvent<T>`
 
-A lightweight, strongly-typed event emitter. Used internally for `tracker.isDirtyChanged`, `tracker.isValidChanged`, `TrackedObject.changed`, `TrackedObject.trackedChanged`, `TrackedCollection.changed`, and `TrackedCollection.trackedChanged`, and available for your own use.
+A lightweight, strongly-typed event emitter. Used internally for `tracker.isDirtyChanged`, `tracker.isValidChanged`, `model.changed`, `model.trackedChanged`, `TrackedCollection.changed`, and `TrackedCollection.trackedChanged`, and available for your own use.
 
 ```typescript
 const event = new TypedEvent<string>();
@@ -1631,16 +1643,16 @@ After save:    obj.id = 99   (correct, open row), trakrState = Unchanged
 ### Full example
 
 ```typescript
-import { DirtyTracker, Tracker, TrackedObject, TrackedCollection, State, Tracked, AutoId } from '@katn30/trakr';
+import { DirtyTracker, Tracker, DirtyTrackedObject, TrackedCollection, State, Tracked, AutoId } from '@katn30/trakr';
 
-class RuleModel extends TrackedObject {
+class RuleModel extends DirtyTrackedObject {
   @AutoId
   id: number = 0;
 
   @Tracked()
   accessor value: string = '';
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
@@ -1751,7 +1763,7 @@ class CommentModel extends TrackedObject {
   @EventTracked(undefined, undefined, { eventType: IssueEvents.CommentEdited })
   accessor text: string = '';
 
-  constructor(t: Tracker) { super(t); }
+  constructor(t: EventTracker) { super(t); }
 }
 
 class IssueModel extends TrackedObject {
@@ -1766,7 +1778,7 @@ class IssueModel extends TrackedObject {
 
   readonly comments: EventTrackedCollection<CommentModel>;
 
-  constructor(t: Tracker) {
+  constructor(t: EventTracker) {
     super(t);
     this.comments = new EventTrackedCollection<CommentModel>(t, [], undefined, {
       itemAdded: IssueEvents.CommentAdded,
@@ -1879,8 +1891,6 @@ Drop-in replacement for `@Tracked` that also tags the field with an **event type
 
 **History fields.** With `history: true` the payload is `{ field: [{ property, value }, …] }`, one entry per write in the operation. With `history: { entryFactory }` each entry is `entryFactory(self, newValue, oldValue, change, ctx)`, where `ctx` comes from `tracker.withContext(ctx, fn)`. A compensating event carries the reverting entry.
 
-**Do not name an `@EventTracked` field `trakrState`**: it collides with `TrackedObject.trakrState`. Use a different name (`stage`, `status`, `phase`, `workflowState`…).
-
 ### `EventTrackedCollection<T>`
 
 Extends `TrackedCollection<T>`. The options choose the shape of the events a collection change produces. Every shape describes **what one operation did**.
@@ -1965,6 +1975,24 @@ An event is one undo step, so granularity is controlled the same way undo granul
 - **Sessions** group a whole edit, such as a dialog, into one step and one set of events.
 
 ### Migration
+
+**v7 → v8**
+
+8.0 splits the model base class the way 6.0 split the tracker. `DirtyTracker` and `EventTracker` behave as in 7.x.
+
+| v7 | v8 |
+|---|---|
+| `class M extends TrackedObject` used with a `DirtyTracker` | `class M extends DirtyTrackedObject`, with `constructor(t: DirtyTracker)` |
+| `class M extends TrackedContainer` used with a `DirtyTracker` | `class M extends DirtyTrackedContainer`, with `constructor(t: DirtyTracker)` |
+| `class M extends TrackedObject` used with an `EventTracker` | Unchanged, but type the constructor as `constructor(t: EventTracker)` |
+| `constructor(t: Tracker)` in a model | Name the concrete tracker: a model belongs to one kind of tracker |
+| `trakrState` / `isDirty` / `dirtyCounter` on EventTracker models (always `Unchanged` / `false` / `0`) | Removed. Read `tracker.pendingEvents` / `tracker.events` instead |
+| `trakrState` / `isDirty` / `dirtyCounter` on `TrackedCollection` (always `Unchanged` / `false` / `0`) | Removed |
+| `session.deletedObjects` | Only on `DirtyTracker` sessions (`DirtyTrackerSession`) |
+| `new EventTrackedCollection(dirtyTracker, …)` | An `EventTrackedCollection` belongs to an `EventTracker` |
+| `@EventTracked` on a `DirtyTracker` model | Use `@Tracked` |
+
+Pairing a model with the wrong tracker is a compile-time error, and throws a `TypeError` at run time.
 
 **v6 → v7**
 

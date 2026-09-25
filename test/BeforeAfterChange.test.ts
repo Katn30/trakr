@@ -7,12 +7,13 @@ import { EventTracker } from "../src/EventTracker";
 import { EventTracked } from "../src/EventTracked";
 
 import { emitted } from "./eventHelpers";
+import { DirtyTrackedObject } from "../src/DirtyTrackedObject";
 // ---- Models ----
 
-class SimpleModel extends TrackedObject {
+class SimpleModel extends DirtyTrackedObject {
   @Tracked() accessor value: string = "";
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
@@ -21,7 +22,7 @@ class EventModel extends TrackedObject {
   @EventTracked(undefined, undefined, { eventType: "NameChanged" })
   accessor name: string = "";
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: EventTracker) {
     super(tracker);
   }
 }
@@ -186,7 +187,7 @@ describe("@Tracked hooks object form", () => {
         { eventType: "NameChanged" },
       )
       accessor name: string = "";
-      constructor(t: Tracker) { super(t); }
+      constructor(t: EventTracker) { super(t); }
     }
 
     const m = tracker.construct(() => new M(tracker));
@@ -211,7 +212,7 @@ describe("@Tracked hooks object form", () => {
         { eventType: "NameChanged" },
       )
       accessor name: string = "";
-      constructor(t: Tracker) { super(t); }
+      constructor(t: EventTracker) { super(t); }
     }
 
     const m = tracker.construct(() => new M(tracker));
@@ -226,13 +227,13 @@ describe("@Tracked hooks object form", () => {
     const tracker = new DirtyTracker();
     const order: string[] = [];
 
-    class M extends TrackedObject {
+    class M extends DirtyTrackedObject {
       @Tracked(undefined, {
         beforeChange: () => order.push("hook-before"),
         afterChange: () => order.push("hook-after"),
       })
       accessor value: string = "";
-      constructor(t: Tracker) { super(t); }
+      constructor(t: DirtyTracker) { super(t); }
     }
 
     const m = tracker.construct(() => new M(tracker));
@@ -246,13 +247,13 @@ describe("@Tracked hooks object form", () => {
     let beforeCalls = 0;
     let afterCalls = 0;
 
-    class M extends TrackedObject {
+    class M extends DirtyTrackedObject {
       @Tracked(undefined, {
         beforeChange: () => beforeCalls++,
         afterChange: () => afterCalls++,
       })
       accessor value: string = "";
-      constructor(t: Tracker) { super(t); }
+      constructor(t: DirtyTracker) { super(t); }
     }
 
     const m = tracker.construct(() => new M(tracker));
@@ -292,7 +293,7 @@ describe("@Tracked legacy onChange function form", () => {
         { eventType: "NameChanged" },
       )
       accessor name: string = "";
-      constructor(t: Tracker) { super(t); }
+      constructor(t: EventTracker) { super(t); }
     }
 
     const m = tracker.construct(() => new M(tracker));

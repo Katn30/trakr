@@ -1,14 +1,8 @@
-import { Tracker } from "./Tracker";
-import { State } from "./State";
+import type { Tracker } from "./Tracker";
 
 export interface ITracked {
   tracker: Tracker;
-  isDirty: boolean;
-  dirtyCounter: number;
-  trakrState: State;
 
-  /** @internal */
-  _setState(value: State): void;
   /** @internal */
   _validate(property: string, errorMessage: string | undefined): void;
   /** @internal */

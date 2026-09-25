@@ -11,16 +11,17 @@ import { State } from "../src/State";
 import { AutoId } from "../src/ExternallyAssigned";
 
 import { emitted, pendingIds } from "./eventHelpers";
+import { DirtyTrackedObject } from "../src/DirtyTrackedObject";
 // ---- Models ----
 
-class ItemModel extends TrackedObject {
+class ItemModel extends DirtyTrackedObject {
   @Tracked()
   accessor name: string = "";
 
   @Tracked()
   accessor value: number = 0;
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
@@ -35,7 +36,7 @@ class EventItemModel extends TrackedObject {
   @EventTracked(undefined, undefined, { eventType: "ItemChanged" })
   accessor value: number = 0;
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: EventTracker) {
     super(tracker);
   }
 }

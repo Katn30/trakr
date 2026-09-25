@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { TrackedObject } from "../src/TrackedObject";
+import { DirtyTrackedObject } from "../src/DirtyTrackedObject";
 import { Tracker } from "../src/Tracker";
 import { DirtyTracker } from "../src/DirtyTracker";
 import { Tracked } from "../src/Tracked";
@@ -8,7 +8,7 @@ import { State } from "../src/State";
 
 // ---- Models ----
 
-class PersonModel extends TrackedObject {
+class PersonModel extends DirtyTrackedObject {
   @Tracked()
   accessor firstName: string = "";
 
@@ -18,18 +18,18 @@ class PersonModel extends TrackedObject {
   @Tracked((_, v: string) => (!v ? "Email is required" : undefined))
   accessor email: string = "";
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
-class OrderModel extends TrackedObject {
+class OrderModel extends DirtyTrackedObject {
   @Tracked()
   accessor status: string = "";
 
   readonly lines: TrackedCollection<string>;
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
     this.lines = new TrackedCollection<string>(tracker);
   }

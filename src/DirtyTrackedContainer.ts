@@ -1,20 +1,20 @@
-import { TrackedObject } from "./TrackedObject";
+import { DirtyTrackedObject } from "./DirtyTrackedObject";
 import { TrackedCollection } from "./TrackedCollection";
 import { ContainerChildren } from "./ContainerChildren";
 
 /**
- * A {@link TrackedObject} (EventTracker model) that aggregates the validity of
+ * A {@link DirtyTrackedObject} that aggregates the validity and dirtiness of
  * its children: other tracked objects, collections, and their object items.
- * For a DirtyTracker, use `DirtyTrackedContainer`.
+ * For an EventTracker, use `TrackedContainer`.
  */
-export abstract class TrackedContainer extends TrackedObject {
+export abstract class DirtyTrackedContainer extends DirtyTrackedObject {
   private readonly _kids = new ContainerChildren();
 
-  protected trackChild(child: TrackedObject | TrackedCollection<any>): void {
+  protected trackChild(child: DirtyTrackedObject | TrackedCollection<any>): void {
     this._kids.track(child);
   }
 
-  protected untrackChild(child: TrackedObject | TrackedCollection<any>): void {
+  protected untrackChild(child: DirtyTrackedObject | TrackedCollection<any>): void {
     this._kids.untrack(child);
   }
 
@@ -24,6 +24,10 @@ export abstract class TrackedContainer extends TrackedObject {
 
   override set trakrIsValid(value: boolean) {
     this._setIsValid(value);
+  }
+
+  override get isDirty(): boolean {
+    return super.isDirty || this._kids.children.some((c) => c instanceof DirtyTrackedObject && c.isDirty);
   }
 
   override destroy(): void {

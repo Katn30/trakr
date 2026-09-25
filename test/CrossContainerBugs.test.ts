@@ -7,13 +7,14 @@ import { EventTracker } from "../src/EventTracker";
 import { Tracked } from "../src/Tracked";
 import { EventTracked } from "../src/EventTracked";
 
+import { DirtyTrackedContainer } from "../src/DirtyTrackedContainer";
 // ===========================================================================
 // Bug 1 — VARIANT A: @Tracked on both sides (control, already confirmed)
 // ===========================================================================
 
 const LIFECYCLE_ORDER = ["root_cause_analysis", "fix_in_progress", "done"];
 
-class ChildTracked extends TrackedContainer {
+class ChildTracked extends DirtyTrackedContainer {
   readonly getStage: () => string;
 
   @Tracked((self: ChildTracked, v: string | null) => {
@@ -23,19 +24,19 @@ class ChildTracked extends TrackedContainer {
   })
   accessor fixNotes: string | null = null;
 
-  constructor(tracker: Tracker, getStage: () => string) {
+  constructor(tracker: DirtyTracker, getStage: () => string) {
     super(tracker);
     this.getStage = getStage;
   }
 }
 
-class ParentTracked extends TrackedContainer {
+class ParentTracked extends DirtyTrackedContainer {
   @Tracked()
   accessor state: string = "root_cause_analysis";
 
   readonly child: ChildTracked;
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
     this.child = new ChildTracked(tracker, () => this.state);
     this.trackChild(this.child);
@@ -79,7 +80,7 @@ class ParentEventTracked extends TrackedContainer {
 // Bug 1 — VARIANT C: state written as an inner write (via onChange callback)
 // ===========================================================================
 
-class ParentInnerWrite extends TrackedContainer {
+class ParentInnerWrite extends DirtyTrackedContainer {
   // Writing `trigger = "advance"` fires onChange which writes `state` as an
   // inner write (the owner is `trigger`, not `state`).
   @Tracked(
@@ -94,7 +95,7 @@ class ParentInnerWrite extends TrackedContainer {
 
   readonly child: ChildTracked;
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
     this.child = new ChildTracked(tracker, () => this.state);
     this.trackChild(this.child);
@@ -171,7 +172,7 @@ class Issue extends TrackedContainer {
 // ===========================================================================
 
 describe("Bug 1A — @Tracked cross-container validator re-run via closure (control)", () => {
-  let tracker: Tracker;
+  let tracker: DirtyTracker;
   let parent: ParentTracked;
 
   beforeEach(() => {
@@ -202,7 +203,7 @@ describe("Bug 1A — @Tracked cross-container validator re-run via closure (cont
 // ===========================================================================
 
 describe("Bug 1C — inner-write revalidation: state written via onChange, child validator must re-run", () => {
-  let tracker: Tracker;
+  let tracker: DirtyTracker;
   let parent: ParentInnerWrite;
 
   beforeEach(() => {

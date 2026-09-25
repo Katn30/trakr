@@ -1,9 +1,8 @@
-import { TrackedObject } from "./TrackedObject";
-import { State } from "./State";
+import type { TrackedObjectBase } from "./TrackedObjectBase";
 import { ITrackerContext } from "./ITrackerContext";
 import { TypedEvent } from "./TypedEvent";
 
-export type PropertyScope = [TrackedObject, string[]];
+export type PropertyScope = [TrackedObjectBase, string[]];
 
 interface ITrackerDelegate {
   readonly canUndo: boolean;
@@ -16,7 +15,7 @@ interface ITrackerDelegate {
 }
 
 export class TrackerSession implements ITrackerContext {
-  private readonly _scope: Map<TrackedObject, Set<string>> | undefined;
+  private readonly _scope: Map<TrackedObjectBase, Set<string>> | undefined;
   private _isDirty: boolean = false;
 
   constructor(
@@ -31,7 +30,7 @@ export class TrackerSession implements ITrackerContext {
   }
 
   /** @internal */
-  _onWrite(obj: TrackedObject, property: string): void {
+  _onWrite(obj: TrackedObjectBase, property: string): void {
     if (this._scope === undefined) return;
     const declaredProps = this._scope.get(obj);
     if (declaredProps === undefined || !declaredProps.has(property)) return;
@@ -65,13 +64,9 @@ export class TrackerSession implements ITrackerContext {
     return this._tracker.canRedo;
   }
 
-  get trackedObjects(): TrackedObject[] {
+  get trackedObjects(): TrackedObjectBase[] {
     if (this._scope === undefined) return [];
     return [...this._scope.keys()];
-  }
-
-  get deletedObjects(): TrackedObject[] {
-    return this.trackedObjects.filter(obj => obj.trakrState === State.Deleted);
   }
 
   undo(): void {

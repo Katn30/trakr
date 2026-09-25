@@ -14,45 +14,45 @@ class Doc extends TrackedObject {
   @Id id: string = "d1";
   @EventTracked(undefined, undefined, { eventType: "Renamed" }) accessor title: string = "";
   @EventTracked(undefined, undefined, { eventType: "Noted", history: true }) accessor note: string = "";
-  constructor(t: Tracker) { super(t); }
+  constructor(t: EventTracker) { super(t); }
 }
 
 class Line extends TrackedObject {
   @AutoId id: number = 0;
   @EventTracked((_self, v: string) => (v === "" ? "required" : undefined)) accessor text: string = "x";
-  constructor(t: Tracker, text = "x") { super(t); this.text = text; }
+  constructor(t: EventTracker, text = "x") { super(t); this.text = text; }
 }
 
 class Card extends TrackedObject {
   @AutoId id: number = 0;
   @EventTracked(undefined, undefined, { eventType: "CardEdited" }) accessor title: string = "";
   @EventTracked() accessor body: string = "";
-  constructor(t: Tracker) { super(t); }
+  constructor(t: EventTracker) { super(t); }
 }
 
 class Sticker extends TrackedObject {
   @Id code: string = "";
   @EventTracked(undefined, undefined, { eventType: "StickerEdited" }) accessor label: string = "";
-  constructor(t: Tracker, code = "") { super(t); this.code = code; }
+  constructor(t: EventTracker, code = "") { super(t); this.code = code; }
 }
 
 class Step extends TrackedObject {
   @Id id: string = "";
   @EventTracked(undefined, undefined, { history: true }) accessor log: string = "";
   @EventTracked() accessor hint: string | undefined = undefined;
-  constructor(t: Tracker, id = "") { super(t); this.id = id; }
+  constructor(t: EventTracker, id = "") { super(t); this.id = id; }
 }
 
 class Seat extends TrackedObject {
   @Id row: string = "";
   @Id num: number = 0;
   @EventTracked() accessor taken: boolean = false;
-  constructor(t: Tracker, row = "", num = 0) { super(t); this.row = row; this.num = num; }
+  constructor(t: EventTracker, row = "", num = 0) { super(t); this.row = row; this.num = num; }
 }
 
 class Holder extends TrackedObject {
   @Id id: string = "h1";
-  constructor(t: Tracker) { super(t); }
+  constructor(t: EventTracker) { super(t); }
 }
 
 // ---------------------------------------------------------------------------- helpers

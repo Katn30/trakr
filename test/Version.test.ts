@@ -1,32 +1,32 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { Tracker } from "../src/Tracker";
 import { DirtyTracker } from "../src/DirtyTracker";
-import { TrackedObject } from "../src/TrackedObject";
+import { DirtyTrackedObject } from "../src/DirtyTrackedObject";
 import { Tracked } from "../src/Tracked";
 
-class PersonModel extends TrackedObject {
+class PersonModel extends DirtyTrackedObject {
   @Tracked()
   accessor name: string = "";
 
   @Tracked()
   accessor age: number = 0;
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
-class CoalescePersonModel extends TrackedObject {
+class CoalescePersonModel extends DirtyTrackedObject {
   @Tracked(undefined, undefined, { coalesceWithin: 10_000 })
   accessor name: string = "";
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
 describe("Tracker.version", () => {
-  let tracker: Tracker;
+  let tracker: DirtyTracker;
   let person: PersonModel;
 
   beforeEach(() => {
@@ -112,7 +112,7 @@ describe("Tracker.version", () => {
 });
 
 describe("Tracker.versionChanged", () => {
-  let tracker: Tracker;
+  let tracker: DirtyTracker;
   let person: PersonModel;
 
   beforeEach(() => {
@@ -213,7 +213,7 @@ describe("Tracker.versionChanged", () => {
 });
 
 describe("Tracker.version with session.rollback()", () => {
-  let tracker: Tracker;
+  let tracker: DirtyTracker;
   let person: PersonModel;
 
   beforeEach(() => {

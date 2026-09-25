@@ -45,7 +45,7 @@ class CommentModel extends TrackedObject {
   @EventTracked(undefined, undefined, { eventType: IssueEvents.CommentStatusChanged })
   accessor status: string = "open";
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: EventTracker) {
     super(tracker);
   }
 }
@@ -72,7 +72,7 @@ class IssueModel extends TrackedObject {
   @EventTracked(undefined, undefined, { eventType: IssueEvents.StateTransitioned })
   accessor stage: string = "Submitted";
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: EventTracker) {
     super(tracker);
   }
 }
@@ -167,7 +167,7 @@ describe("EventTracker — ungrouped default emission (test 1, 2)", () => {
       @Id id: string = "";
       @EventTracked() accessor a: string = "";
       @EventTracked() accessor b: string = "";
-      constructor(t: Tracker) { super(t); }
+      constructor(t: EventTracker) { super(t); }
     }
     const tracker = newEventTracker();
     const m = tracker.construct(() => new M(tracker));
@@ -192,7 +192,7 @@ describe("EventTracker — ungrouped default emission (test 1, 2)", () => {
       @EventTracked() accessor a: string = "";
       @EventTracked(undefined, undefined, { eventType: "X" }) accessor b: string = "";
       @EventTracked(undefined, undefined, { eventType: "Y" }) accessor c: string = "";
-      constructor(t: Tracker) { super(t); }
+      constructor(t: EventTracker) { super(t); }
     }
     const tracker = newEventTracker();
     const m = tracker.construct(() => new M(tracker));
@@ -218,7 +218,7 @@ describe("EventTracker — history mode on scalar properties (tests 4, 5, 6, 7, 
     class M extends TrackedObject {
       @Id id: string = "";
       @EventTracked(undefined, undefined, { history: true }) accessor s: string = "";
-      constructor(t: Tracker) { super(t); }
+      constructor(t: EventTracker) { super(t); }
     }
     const tracker = newEventTracker();
     const m = tracker.construct(() => new M(tracker));
@@ -253,7 +253,7 @@ describe("EventTracker — history mode on scalar properties (tests 4, 5, 6, 7, 
         },
       })
       accessor s: string = "";
-      constructor(t: Tracker) { super(t); }
+      constructor(t: EventTracker) { super(t); }
     }
     const tracker = newEventTracker();
     const m = tracker.construct(() => new M(tracker));
@@ -284,7 +284,7 @@ describe("EventTracker — history mode on scalar properties (tests 4, 5, 6, 7, 
       @Id id: string = "";
       @EventTracked(undefined, undefined, { history: true, coalesceWithin: 3000 })
       accessor s: string = "";
-      constructor(t: Tracker) { super(t); }
+      constructor(t: EventTracker) { super(t); }
     }
     const tracker = newEventTracker();
     const m = tracker.construct(() => new M(tracker));
@@ -310,7 +310,7 @@ describe("EventTracker — history mode on scalar properties (tests 4, 5, 6, 7, 
         },
       })
       accessor s: string = "";
-      constructor(t: Tracker) { super(t); }
+      constructor(t: EventTracker) { super(t); }
     }
     const tracker = newEventTracker();
     const m = tracker.construct(() => new M(tracker));
@@ -335,7 +335,7 @@ describe("EventTracker — history mode on scalar properties (tests 4, 5, 6, 7, 
     class M extends TrackedObject {
       @Id id: string = "";
       @EventTracked(undefined, undefined, { history: true }) accessor s: string = "";
-      constructor(t: Tracker) { super(t); }
+      constructor(t: EventTracker) { super(t); }
     }
     const tracker = newEventTracker();
     const m = tracker.construct(() => new M(tracker));
@@ -417,7 +417,7 @@ describe("EventTrackedCollection — legacy itemAdded/itemRemoved (BC)", () => {
   it("itemRemoved of @Id item carries targetId and trackingId", () => {
     class ProductModel extends TrackedObject {
       @Id id: number = 0;
-      constructor(t: Tracker) { super(t); }
+      constructor(t: EventTracker) { super(t); }
     }
     const tracker = newEventTracker();
     const product = tracker.construct(() => new ProductModel(tracker));
@@ -439,7 +439,7 @@ describe("EventTrackedCollection — legacy itemAdded/itemRemoved (BC)", () => {
   it("itemRemoved of @Id item with non-numeric id carries trackingId but no targetId", () => {
     class TagModel extends TrackedObject {
       @Id slug: string = "";
-      constructor(t: Tracker) { super(t); }
+      constructor(t: EventTracker) { super(t); }
     }
     const tracker = newEventTracker();
     const tag = tracker.construct(() => new TagModel(tracker));
@@ -464,14 +464,14 @@ describe("EventTrackedCollection — legacy itemAdded/itemRemoved (BC)", () => {
 class Author extends TrackedObject {
   @Id name: string = "";
   @EventTracked() accessor bio: string = "";
-  constructor(t: Tracker) { super(t); }
+  constructor(t: EventTracker) { super(t); }
 }
 
 class Post extends TrackedObject {
   @Id postId: string = "";
   @EventTracked() accessor title: string = "";
   authors: EventTrackedCollection<Author>;
-  constructor(t: Tracker, opts?: { eventType?: string; history?: boolean }) {
+  constructor(t: EventTracker, opts?: { eventType?: string; history?: boolean }) {
     super(t);
     this.authors = new EventTrackedCollection<Author>(t, [], undefined, {
       eventType: opts?.eventType,
@@ -617,7 +617,7 @@ describe("Identity extraction (tests 13, 14, 15, 16)", () => {
   it("test 13: item type with no @Id and no @AutoId used in EventTrackedCollection — constructor throws", () => {
     class NoId extends TrackedObject {
       @EventTracked() accessor label: string = "";
-      constructor(t: Tracker) { super(t); }
+      constructor(t: EventTracker) { super(t); }
     }
     const tracker = newEventTracker();
     tracker.construct(() => new NoId(tracker));
@@ -639,12 +639,12 @@ describe("Identity extraction (tests 13, 14, 15, 16)", () => {
     class NamedItem extends TrackedObject {
       @Id id: string = "";
       @EventTracked() accessor v: string = "";
-      constructor(t: Tracker) { super(t); }
+      constructor(t: EventTracker) { super(t); }
     }
     class Owner extends TrackedObject {
       @Id ownerId: string = "";
       items: EventTrackedCollection<NamedItem>;
-      constructor(t: Tracker) {
+      constructor(t: EventTracker) {
         super(t);
         this.items = new EventTrackedCollection<NamedItem>(t, [], undefined, {
           eventType: "X",
@@ -677,12 +677,12 @@ describe("Identity extraction (tests 13, 14, 15, 16)", () => {
       @Id key1: string = "";
       @Id key2: number = 0;
       @EventTracked() accessor v: string = "";
-      constructor(t: Tracker) { super(t); }
+      constructor(t: EventTracker) { super(t); }
     }
     class Owner extends TrackedObject {
       @Id ownerId: string = "";
       items: EventTrackedCollection<CompositeItem>;
-      constructor(t: Tracker) {
+      constructor(t: EventTracker) {
         super(t);
         this.items = new EventTrackedCollection<CompositeItem>(t, [], undefined, {
           eventType: "X",
@@ -714,12 +714,12 @@ describe("Identity extraction (tests 13, 14, 15, 16)", () => {
     class AutoItem extends TrackedObject {
       @AutoId id: number = 0;
       @EventTracked() accessor v: string = "";
-      constructor(t: Tracker) { super(t); }
+      constructor(t: EventTracker) { super(t); }
     }
     class Owner extends TrackedObject {
       @Id ownerId: string = "";
       items: EventTrackedCollection<AutoItem>;
-      constructor(t: Tracker) {
+      constructor(t: EventTracker) {
         super(t);
         this.items = new EventTrackedCollection<AutoItem>(t, [], undefined, {
           eventType: "X",
@@ -750,12 +750,12 @@ describe("Identity extraction (tests 13, 14, 15, 16)", () => {
       @Id key: string = "";
       @AutoId id: number = 0;
       @EventTracked() accessor v: string = "";
-      constructor(t: Tracker) { super(t); }
+      constructor(t: EventTracker) { super(t); }
     }
     class Owner extends TrackedObject {
       @Id ownerId: string = "";
       items: EventTrackedCollection<MixedItem>;
-      constructor(t: Tracker) {
+      constructor(t: EventTracker) {
         super(t);
         this.items = new EventTrackedCollection<MixedItem>(t, [], undefined, {
           eventType: "X",
@@ -792,7 +792,7 @@ describe("@EventTracked semantic parity", () => {
         { eventType: IssueEvents.SubmittedDetailsRevised },
       )
       accessor name: string = "";
-      constructor(t: Tracker) { super(t); }
+      constructor(t: EventTracker) { super(t); }
     }
     const tracker = newEventTracker();
     const m = tracker.construct(() => new M(tracker));
@@ -806,7 +806,7 @@ describe("@EventTracked semantic parity", () => {
       @Id id: string = "";
       @EventTracked(undefined, undefined, { coalesceWithin: 3000 })
       accessor name: string = "";
-      constructor(t: Tracker) { super(t); }
+      constructor(t: EventTracker) { super(t); }
     }
     const tracker = newEventTracker();
     const m = tracker.construct(() => new M(tracker));
@@ -825,7 +825,7 @@ describe("GeneratedEvent.targetId widened to unknown", () => {
     class M extends TrackedObject {
       @Id key: string = "";
       @EventTracked() accessor v: string = "";
-      constructor(t: Tracker) { super(t); }
+      constructor(t: EventTracker) { super(t); }
     }
     const tracker = newEventTracker();
     const m = tracker.construct(() => new M(tracker));
@@ -842,7 +842,7 @@ describe("GeneratedEvent.targetId widened to unknown", () => {
       @Id k1: string = "";
       @Id k2: number = 0;
       @EventTracked() accessor v: string = "";
-      constructor(t: Tracker) { super(t); }
+      constructor(t: EventTracker) { super(t); }
     }
     const tracker = newEventTracker();
     const m = tracker.construct(() => new M(tracker));
@@ -895,7 +895,7 @@ describe("@EventTracked construction respects tracker.construct()", () => {
       @Id id: string = "id";
       @EventTracked(undefined, undefined, { eventType: "X" })
       accessor name: string = "";
-      constructor(t: Tracker, data?: { name: string }) {
+      constructor(t: EventTracker, data?: { name: string }) {
         super(t);
         if (data) this.name = data.name;
       }
@@ -914,7 +914,7 @@ describe("tracker.new()", () => {
     @Id id: string = "id";
     @EventTracked(undefined, undefined, { eventType: "X" }) accessor status: string = "";
     @EventTracked(undefined, undefined, { eventType: "X" }) accessor priority: number = 0;
-    constructor(t: Tracker, data?: { status: string; priority: number }) {
+    constructor(t: EventTracker, data?: { status: string; priority: number }) {
       super(t);
       if (data) {
         this.status = data.status;
@@ -946,7 +946,7 @@ describe("tracker.new()", () => {
   it("object is not dirty after tracker.new()", () => {
     const tracker = newEventTracker();
     const issue = tracker.new(() => new Issue(tracker));
-    expect(issue.isDirty).toBe(false);
+    expect("isDirty" in issue).toBe(false); // no per-object state on an EventTracker
   });
 
   it("canUndo is false after tracker.new()", () => {
@@ -960,7 +960,7 @@ describe("tracker.new()", () => {
     const issue = tracker.new(() => new Issue(tracker));
     issue.status = "in-progress";
     expect(tracker.isDirty).toBe(true);
-    expect(issue.isDirty).toBe(true);
+    expect(tracker.pendingEvents).toHaveLength(2);
   });
 
   it("same constructor: tracker.construct() with data produces no events", () => {
@@ -992,7 +992,7 @@ describe("tracker.new()", () => {
       @Id id: string = "p";
       @EventTracked(undefined, undefined, { eventType: "X" }) accessor status: string = "";
       @EventTracked(undefined, undefined, { eventType: "X" }) accessor priority: number = 0;
-      constructor(t: Tracker) {
+      constructor(t: EventTracker) {
         super(t);
         this.status = "tmp";
         this.status = "";
@@ -1014,7 +1014,7 @@ describe("tracker.new() — object pushed to EventTrackedCollection emits itemAd
     @AutoId id: number = 0;
     @EventTracked(undefined, undefined, { eventType: "task_changed" })
     accessor type: string = "default";
-    constructor(t: Tracker, type: string) {
+    constructor(t: EventTracker, type: string) {
       super(t);
       this.type = type;
     }
@@ -1023,7 +1023,7 @@ describe("tracker.new() — object pushed to EventTrackedCollection emits itemAd
   it("object created with non-default constructor value is Unchanged after tracker.new()", () => {
     const tracker = newEventTracker();
     const task = tracker.new(() => new Task(tracker, "custom"));
-    expect(task.trakrState).toBe("Unchanged");
+    expect("trakrState" in task).toBe(false);
   });
 
   it("pushing a tracker.new() object emits itemAdded, not a field-cluster event", () => {
@@ -1134,7 +1134,7 @@ describe("EventTracker — redo after compensating commit produces a fresh event
     tracker.undo();
     tracker.redo();
 
-    expect(two.trakrState).toBe(State.Unchanged);
+    expect("trakrState" in two).toBe(false);
     expect(emitted(tracker)).toEqual([]);
   });
 });
@@ -1177,8 +1177,8 @@ describe("EventTracker — undo after commit only reverses the undone op, leaves
   it("commit_then_undo_preserves_committed_inserts", () => {
     const { tracker, c, item } = setup();
 
-    expect(item.trakrState).toBe(State.Unchanged);
-    expect(c.trakrState).toBe(State.Unchanged);
+    expect(c.items.collection).toContain(item);
+    expect("trakrState" in c).toBe(false);
     expect(c.phase).toBe("b");
 
     tracker.undo();
@@ -1186,7 +1186,7 @@ describe("EventTracker — undo after commit only reverses the undone op, leaves
     expect(c.phase).toBe("a");
     // item's committed Insert must not have been rolled back — it stays Unchanged
     // even though an unrelated later operation was undone.
-    expect(item.trakrState).toBe(State.Unchanged);
+    expect("trakrState" in item).toBe(false);
     expect(c.items.collection).toContain(item);
     // EventTracker objects carry no Insert/Changed/Deleted state — the undo shows up
     // only as a compensating `phase` event.
@@ -1221,9 +1221,9 @@ describe("EventTracker — undo after commit only reverses the undone op, leaves
     // No tracked object is ever marked Deleted on an EventTracker:
     // item is in the collection → its state must not be Deleted.
     for (const listed of c.items.collection) {
-      expect(listed.trakrState).not.toBe(State.Deleted);
+      expect("trakrState" in listed).toBe(false);
     }
-    expect(item.trakrState).not.toBe(State.Deleted);
+    expect(c.items.collection).toContain(item);
   });
 
   it("commit_then_undo_then_redo", () => {
@@ -1233,8 +1233,8 @@ describe("EventTracker — undo after commit only reverses the undone op, leaves
     tracker.redo();
 
     expect(c.phase).toBe("b");
-    expect(item.trakrState).toBe(State.Unchanged);
-    expect(c.trakrState).toBe(State.Unchanged);
+    expect("trakrState" in item).toBe(false);
+    expect(c.phase).toBe("b");
     expect(c.items.collection).toContain(item);
     expect(emitted(tracker)).toEqual([]);
   });

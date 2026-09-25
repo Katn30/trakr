@@ -1,4 +1,4 @@
-import { Tracker } from "./Tracker";
+import type { EventTracker } from "./EventTracker";
 import { TrackedCollection } from "./TrackedCollection";
 import { TrackedObject } from "./TrackedObject";
 import { EventLifecycleOptions } from "./GeneratedEvent";
@@ -57,7 +57,7 @@ export class EventTrackedCollection<
   private readonly _baselineItems: Set<T> = new Set();
 
   public constructor(
-    tracker: Tracker,
+    tracker: EventTracker,
     items?: T[],
     validator?: (value: T[]) => string | undefined,
     options?: EventTrackedCollectionOptions<T, TEventType>,

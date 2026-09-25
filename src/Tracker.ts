@@ -4,11 +4,10 @@ import { TrackedCollection } from "./TrackedCollection";
 import { OperationProperties } from "./OperationProperties";
 import { PropertyType } from "./PropertyType";
 import { CollectionUtilities } from "./CollectionUtilities";
-import { State } from "./State";
 import { validate, validateSingleProperty } from "./Registry";
 import { DependencyTracker, COLLECTION_VERSION_KEY } from "./DependencyTracker";
 import { ITracked } from "./ITracked";
-import { TrackedObject } from "./TrackedObject";
+import { TrackedObjectBase } from "./TrackedObjectBase";
 import { TrackerSession, PropertyScope } from "./TrackerSession";
 import { ITrackerContext } from "./ITrackerContext";
 
@@ -41,7 +40,7 @@ export abstract class Tracker implements ITrackerContext {
   public _isReplaying: boolean = false;
   private _pendingRevalidations: Array<{ obj: ITracked; prop: string | undefined }> = [];
 
-  public readonly trackedObjects: TrackedObject[] = [];
+  public readonly trackedObjects: TrackedObjectBase[] = [];
 
   public readonly trackedCollections: TrackedCollection<any>[] = [];
 
@@ -118,11 +117,10 @@ export abstract class Tracker implements ITrackerContext {
   }
 
   /**
-   * @internal Whether tracked objects carry Insert/Changed/Deleted state.
-   * True for DirtyTracker, false for EventTracker (whose pending changes are a
-   * diff against the persisted baseline, not a per-object state).
+   * @internal Throws unless `obj` is the model type this tracker works with
+   * (`DirtyTrackedObject` for DirtyTracker, `TrackedObject` for EventTracker).
    */
-  public abstract readonly _tracksObjectState: boolean;
+  public abstract _assertAccepts(obj: TrackedObjectBase): void;
 
   /** Subclass-specific definition of "has unsaved work". */
   protected abstract _computeIsDirty(): boolean;
@@ -137,8 +135,8 @@ export abstract class Tracker implements ITrackerContext {
   protected _onReplayed(_op: Operation): void {}
   /** Undone operations were dropped from the redo stack and can never be redone. */
   protected _onOperationsDropped(_ops: readonly Operation[]): void {}
-  /** `tracker.new()` finished constructing its objects. */
-  protected _onNewCompleted(): void {}
+  /** `tracker.new()` finished constructing `created`. */
+  protected abstract _onNewCompleted(created: readonly TrackedObjectBase[]): void;
   /** A session ended: `composed` became the single undo step `result`. */
   protected _onSessionEnded(_composed: readonly Operation[], _result: Operation): void {}
   /** A session was rolled back: `reverted` were undone and removed. */
@@ -163,12 +161,12 @@ export abstract class Tracker implements ITrackerContext {
   }
 
   /** @internal */
-  public _trackObject(trackedObject: TrackedObject) {
+  public _trackObject(trackedObject: TrackedObjectBase) {
     this.trackedObjects.push(trackedObject);
   }
 
   /** @internal */
-  public _untrackObject(trackedObject: TrackedObject) {
+  public _untrackObject(trackedObject: TrackedObjectBase) {
     this.trackedObjects.splice(this.trackedObjects.indexOf(trackedObject), 1);
     if (!trackedObject.trakrIsValid && !trackedObject._isValidityReleased) this._invalidCount--;
     this.isValid = this._invalidCount === 0;
@@ -189,10 +187,9 @@ export abstract class Tracker implements ITrackerContext {
     this.isValid = this._invalidCount === 0;
   }
 
-  /** @internal */
-  public _onValidityChanged(wasValid: boolean, isNowValid: boolean): void {
-    if (wasValid && !isNowValid) this._invalidCount++;
-    else if (!wasValid && isNowValid) this._invalidCount--;
+  /** @internal An object or collection's validity flipped. */
+  public _onValidityChanged(becameInvalid: boolean): void {
+    this._invalidCount += becameInvalid ? 1 : -1;
     if (!this._isTrackingSuppressed) {
       this.isValid = this._invalidCount === 0;
     }
@@ -224,16 +221,11 @@ export abstract class Tracker implements ITrackerContext {
     this._undoOperations.length = undoLengthBefore;
     this._redoOperations.length = 0;
     for (const op of savedRedo) this._redoOperations.push(op);
-    for (let i = objectsBefore; i < this.trackedObjects.length; i++) {
-      validate(this.trackedObjects[i]);
-      this.trackedObjects[i]._setDirtyCounter(0);
-      if (this.trackedObjects[i].trakrState === State.Changed) {
-        this.trackedObjects[i]._setState(State.Unchanged);
-      }
-    }
+    const created = this.trackedObjects.slice(objectsBefore);
+    for (const obj of created) validate(obj);
     this._constructionDepth--;
     this.isValid = this._invalidCount === 0;
-    this._onNewCompleted();
+    this._onNewCompleted(created);
     this.reset();
     return result;
   }
@@ -299,7 +291,7 @@ export abstract class Tracker implements ITrackerContext {
 
     if (this._currentSession !== undefined &&
         properties.property !== undefined &&
-        properties.trackedObject instanceof TrackedObject) {
+        properties.trackedObject instanceof TrackedObjectBase) {
       this._currentSession._onWrite(properties.trackedObject, properties.property);
     }
 
@@ -412,7 +404,7 @@ export abstract class Tracker implements ITrackerContext {
     this.revalidate();
   }
 
-  public getByTrackingId(trackingId: number): TrackedObject | undefined {
+  public getByTrackingId(trackingId: number): TrackedObjectBase | undefined {
     return this.trackedObjects.find((o) => o.trakrId === trackingId);
   }
 
@@ -455,13 +447,17 @@ export abstract class Tracker implements ITrackerContext {
     if (this._currentSession !== undefined) return this._currentSession;
     this._composingBaseIndex = this._undoOperations.length;
     this._composingRedoLength = this._redoOperations.length;
-    this._currentSession = new TrackerSession(
+    this._currentSession = this._createSession(
       scope,
-      this,
       () => this.endComposing(),
       () => this.rollbackComposing(),
     );
     return this._currentSession;
+  }
+
+  /** Creates the session object returned by `startSession`; DirtyTracker adds `deletedObjects`. */
+  protected _createSession(scope: PropertyScope[] | undefined, end: () => void, rollback: () => void): TrackerSession {
+    return new TrackerSession(scope, this, end, rollback);
   }
 
   private endComposing(): void {

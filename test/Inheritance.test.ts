@@ -1,16 +1,16 @@
 import { describe, it, expect } from "vitest";
-import { TrackedObject } from "../src/TrackedObject";
+import { DirtyTrackedObject } from "../src/DirtyTrackedObject";
 import { Tracker } from "../src/Tracker";
 import { DirtyTracker } from "../src/DirtyTracker";
 import { Tracked } from "../src/Tracked";
 
-class RuleBase extends TrackedObject {
+class RuleBase extends DirtyTrackedObject {
   @Tracked((self: RuleBase, v: string) =>
     !v ? "value is required" : undefined,
   )
   accessor value: string = "";
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }

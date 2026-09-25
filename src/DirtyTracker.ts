@@ -4,7 +4,10 @@ import { CollectionUtilities } from "./CollectionUtilities";
 import { IdAssignment } from "./ExternallyAssigned";
 import { State } from "./State";
 import { ITracked } from "./ITracked";
-import { TrackedObject } from "./TrackedObject";
+import { TrackedObjectBase } from "./TrackedObjectBase";
+import { DirtyTrackedObject } from "./DirtyTrackedObject";
+import { DirtyTrackerSession } from "./DirtyTrackerSession";
+import { PropertyScope } from "./TrackerSession";
 
 /**
  * Batch-state tracker for Save-button workflows. Object state is the truth:
@@ -14,11 +17,40 @@ import { TrackedObject } from "./TrackedObject";
  * object dirty again so the next save persists the reversal.
  */
 export class DirtyTracker extends Tracker {
-  /** @internal */
-  public readonly _tracksObjectState = true;
+  declare public readonly trackedObjects: DirtyTrackedObject[];
 
-  public get deletedObjects(): TrackedObject[] {
+  public get deletedObjects(): DirtyTrackedObject[] {
     return this.trackedObjects.filter(obj => obj.trakrState === State.Deleted);
+  }
+
+  /** @internal */
+  public _assertAccepts(obj: TrackedObjectBase): void {
+    if (!(obj instanceof DirtyTrackedObject)) {
+      throw new TypeError(
+        `${obj.constructor.name} cannot be tracked by a DirtyTracker: its models extend ` +
+        "DirtyTrackedObject (or DirtyTrackedContainer). TrackedObject models belong to an EventTracker.",
+      );
+    }
+  }
+
+  public override getByTrackingId(trackingId: number): DirtyTrackedObject | undefined {
+    return super.getByTrackingId(trackingId) as DirtyTrackedObject | undefined;
+  }
+
+  public override startSession(scope?: PropertyScope[]): DirtyTrackerSession {
+    return super.startSession(scope) as DirtyTrackerSession;
+  }
+
+  protected override _createSession(scope: PropertyScope[] | undefined, end: () => void, rollback: () => void): DirtyTrackerSession {
+    return new DirtyTrackerSession(scope, this, end, rollback);
+  }
+
+  /** Objects built by `tracker.new()` start clean: their constructor writes are not edits. */
+  protected override _onNewCompleted(created: readonly TrackedObjectBase[]): void {
+    for (const obj of created as readonly DirtyTrackedObject[]) {
+      obj._setDirtyCounter(0);
+      if (obj.trakrState === State.Changed) obj._setState(State.Unchanged);
+    }
   }
 
   protected _computeIsDirty(): boolean {

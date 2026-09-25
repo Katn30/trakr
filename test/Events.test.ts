@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { TrackedObject } from "../src/TrackedObject";
+import { DirtyTrackedObject } from "../src/DirtyTrackedObject";
 import { Tracker } from "../src/Tracker";
 import { DirtyTracker } from "../src/DirtyTracker";
 import { Tracked } from "../src/Tracked";
@@ -7,28 +7,28 @@ import { TrackedCollection } from "../src/TrackedCollection";
 
 // ---- Models ----
 
-class SimpleModel extends TrackedObject {
+class SimpleModel extends DirtyTrackedObject {
   @Tracked() accessor value: string = "";
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
-class SetterModel extends TrackedObject {
+class SetterModel extends DirtyTrackedObject {
   private _value: string = "";
 
   get value(): string { return this._value; }
   @Tracked() set value(v: string) { this._value = v; }
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
-// ---- TrackedObject events ----
+// ---- DirtyTrackedObject events ----
 
-describe("TrackedObject.changed", () => {
+describe("DirtyTrackedObject.changed", () => {
   it("fires on initial write", () => {
     const tracker = new DirtyTracker();
     const model = tracker.construct(() => new SimpleModel(tracker));
@@ -88,7 +88,7 @@ describe("TrackedObject.changed", () => {
   });
 });
 
-describe("TrackedObject.trackedChanged", () => {
+describe("DirtyTrackedObject.trackedChanged", () => {
   it("fires on initial write", () => {
     const tracker = new DirtyTracker();
     const model = tracker.construct(() => new SimpleModel(tracker));

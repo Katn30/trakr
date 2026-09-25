@@ -13,32 +13,34 @@ import { Id, getIdentityProperties } from "../src/ExternallyAssigned";
 import { State } from "../src/State";
 
 import { emitted, oneOperation, pendingIds } from "./eventHelpers";
+import { DirtyTrackedObject } from "../src/DirtyTrackedObject";
+import { DirtyTrackedContainer } from "../src/DirtyTrackedContainer";
 afterEach(() => vi.restoreAllMocks());
 
 // ---------------------------------------------------------------------------- Models
 
-class Flags extends TrackedObject {
+class Flags extends DirtyTrackedObject {
   @Tracked(undefined, undefined, { coalesceWithin: 60_000 }) accessor on: boolean = false;
   @Tracked() accessor anything: unknown = "";
-  constructor(t: Tracker) { super(t); }
+  constructor(t: DirtyTracker) { super(t); }
 }
 
-class Defaults extends TrackedObject {
+class Defaults extends DirtyTrackedObject {
   @Tracked() accessor status: string = "";
-  constructor(t: Tracker) {
+  constructor(t: DirtyTracker) {
     super(t);
     this.status = "draft";
   }
 }
 
-class Part extends TrackedObject {
+class Part extends DirtyTrackedObject {
   @Tracked() accessor name: string = "";
-  constructor(t: Tracker) { super(t); }
+  constructor(t: DirtyTracker) { super(t); }
 }
 
 const setterCalls: string[] = [];
 
-class SetterModel extends TrackedObject {
+class SetterModel extends DirtyTrackedObject {
   private _code = "ok";
   private _part: Part | null = null;
 
@@ -55,13 +57,13 @@ class SetterModel extends TrackedObject {
   get part(): Part | null { return this._part; }
   @Tracked() set part(value: Part | null) { this._part = value; }
 
-  constructor(t: Tracker) { super(t); }
+  constructor(t: DirtyTracker) { super(t); }
 }
 
-class Box extends TrackedContainer {
+class Box extends DirtyTrackedContainer {
   readonly tags: TrackedCollection<string>;
   readonly parts: TrackedCollection<Part>;
-  constructor(t: Tracker, parts: Part[] = []) {
+  constructor(t: DirtyTracker, parts: Part[] = []) {
     super(t);
     this.tags = new TrackedCollection<string>(t, ["a"]);
     this.parts = new TrackedCollection<Part>(t, parts);
@@ -180,16 +182,14 @@ describe("@Tracked on a setter", () => {
 // ---------------------------------------------------------------------------- TrackedCollection
 
 describe("TrackedCollection — interface members", () => {
-  it("is never dirty itself and ignores state/validation calls", () => {
+  it("carries no object state and ignores registry validation", () => {
     const tracker = new DirtyTracker();
     const col = tracker.construct(() => new TrackedCollection<number>(tracker, [1, 2]));
-    const tracked = col as unknown as ITracked;
-    tracked._setState(State.Changed);
-    tracked._applyValidation(new Map([["x", "err"]]));
-    expect(col.trakrState).toBe(State.Unchanged);
+    (col as unknown as ITracked)._applyValidation(new Map([["x", "err"]]));
     expect(col.trakrIsValid).toBe(true);
-    expect(col.isDirty).toBe(false);
-    expect(col.dirtyCounter).toBe(0);
+    for (const member of ["trakrState", "isDirty", "dirtyCounter", "_setState"]) {
+      expect(member in col).toBe(false);
+    }
   });
 
   it("toString / toLocaleString / lastIndexOf mirror Array", () => {
@@ -258,19 +258,19 @@ describe("TrackedContainer — children bookkeeping", () => {
 class BaseDoc extends TrackedObject {
   @Id id: string = "b";
   @EventTracked(undefined, undefined, { eventType: "Base" }) accessor title: string = "";
-  constructor(t: Tracker) { super(t); }
+  constructor(t: EventTracker) { super(t); }
 }
 
 class DerivedDoc extends BaseDoc {
   @EventTracked(undefined, undefined, { eventType: "Derived" }) override accessor title: string = "";
-  constructor(t: Tracker) { super(t); }
+  constructor(t: EventTracker) { super(t); }
 }
 
 class Pair extends TrackedObject {
   @Id id: string = "p";
   @EventTracked(undefined, undefined, { eventType: "PairEdited" }) accessor left: string = "";
   @EventTracked(undefined, undefined, { eventType: "PairEdited" }) accessor right: string = "";
-  constructor(t: Tracker) { super(t); }
+  constructor(t: EventTracker) { super(t); }
 }
 
 describe("event metadata and collections — remaining paths", () => {

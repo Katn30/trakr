@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { TrackedObject } from "../src/TrackedObject";
+import { DirtyTrackedObject } from "../src/DirtyTrackedObject";
 import { Tracker } from "../src/Tracker";
 import { DirtyTracker } from "../src/DirtyTracker";
 import { Tracked } from "../src/Tracked";
 
 // ---- Concrete test models ----
 
-class PersonModel extends TrackedObject {
+class PersonModel extends DirtyTrackedObject {
   @Tracked(
     (self: PersonModel, v: string) => !v ? "Name is required" : undefined,
     undefined,
@@ -22,61 +22,61 @@ class PersonModel extends TrackedObject {
   @Tracked()
   accessor notes: string = "";
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
-class EmptyModel extends TrackedObject {
-  constructor(tracker: Tracker) {
+class EmptyModel extends DirtyTrackedObject {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
-class ModelWithConstructorInit extends TrackedObject {
+class ModelWithConstructorInit extends DirtyTrackedObject {
   @Tracked()
   accessor value: string = "";
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
     this.value = "initial"; // set during construction — should be suppressed
   }
 }
 
-class StrictModel extends TrackedObject {
+class StrictModel extends DirtyTrackedObject {
   @Tracked((_self: StrictModel, v: string) =>
     !v ? "Required" : undefined,
   )
   accessor field: string = "";
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
-class EventModel extends TrackedObject {
+class EventModel extends DirtyTrackedObject {
   @Tracked()
   accessor startDate: Date = new Date(0);
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
-class ConfigModel extends TrackedObject {
+class ConfigModel extends DirtyTrackedObject {
   @Tracked()
   accessor config: Record<string, unknown> = {};
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
-class NullableModel extends TrackedObject {
+class NullableModel extends DirtyTrackedObject {
   @Tracked()
   accessor label: string | null = null;
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
@@ -84,7 +84,7 @@ class NullableModel extends TrackedObject {
 // ---- Tests ----
 
 describe("Tracked", () => {
-  let tracker: Tracker;
+  let tracker: DirtyTracker;
   let person: PersonModel;
 
   beforeEach(() => {
@@ -354,7 +354,7 @@ describe("Tracked", () => {
 // ---- Models for getter tests ----
 
 // Getter + setter pair with cascade side effects in the setter
-class RuleModel extends TrackedObject {
+class RuleModel extends DirtyTrackedObject {
   private _isEnabled: boolean = false;
 
   @Tracked()
@@ -381,13 +381,13 @@ class RuleModel extends TrackedObject {
   )
   accessor scheduleInterval: string | null = null;
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
 // Purely computed getter (no setter) — registers as a dependency source
-class BudgetModel extends TrackedObject {
+class BudgetModel extends DirtyTrackedObject {
   @Tracked()
   accessor price: number = 0;
 
@@ -402,7 +402,7 @@ class BudgetModel extends TrackedObject {
   )
   accessor label: string = '';
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }

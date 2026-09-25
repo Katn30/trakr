@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { TrackedObject } from "../src/TrackedObject";
+import { DirtyTrackedObject } from "../src/DirtyTrackedObject";
 import { Tracker } from "../src/Tracker";
 import { DirtyTracker } from "../src/DirtyTracker";
 import { Tracked } from "../src/Tracked";
@@ -8,7 +8,7 @@ import { TrackedCollection } from "../src/TrackedCollection";
 // ---- Models ----
 
 // Case 1a: @Tracked setter → @Tracked setter
-class NameModel extends TrackedObject {
+class NameModel extends DirtyTrackedObject {
   private _firstName: string = "";
   private _lastName: string = "";
 
@@ -28,11 +28,11 @@ class NameModel extends TrackedObject {
 }
 
 // Case 1b: @Tracked setter → TrackedCollection mutation
-class TagModel extends TrackedObject {
+class TagModel extends DirtyTrackedObject {
   private _tag: string = "";
   readonly tags: TrackedCollection<string>;
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
     this.tags = new TrackedCollection<string>(tracker);
   }
@@ -45,12 +45,12 @@ class TagModel extends TrackedObject {
 }
 
 // Case 2: TrackedCollection.changed → @Tracked setter
-class OrderModel extends TrackedObject {
+class OrderModel extends DirtyTrackedObject {
   @Tracked() accessor itemCount: number = 0;
 
   readonly items: TrackedCollection<string>;
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
     this.items = new TrackedCollection<string>(tracker);
     this.items.changed.subscribe(() => {
@@ -60,7 +60,7 @@ class OrderModel extends TrackedObject {
 }
 
 // Case 1b: @Tracked accessor onChange → @Tracked setter
-class AccessorTagModel extends TrackedObject {
+class AccessorTagModel extends DirtyTrackedObject {
   readonly tags: TrackedCollection<string>;
 
   @Tracked(
@@ -72,14 +72,14 @@ class AccessorTagModel extends TrackedObject {
   )
   accessor tag: string = "";
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
     this.tags = new TrackedCollection<string>(tracker);
   }
 }
 
 // Case 1b variant: @Tracked accessor onChange → @Tracked accessor
-class AccessorNameModel extends TrackedObject {
+class AccessorNameModel extends DirtyTrackedObject {
   @Tracked(
     undefined,
     (self: AccessorNameModel, newValue: string) => {
@@ -93,20 +93,20 @@ class AccessorNameModel extends TrackedObject {
   @Tracked() accessor firstName: string = "";
   @Tracked() accessor lastName: string = "";
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
-// Case 3: TrackedObject.trackedChanged → @Tracked setter
-class TitleModel extends TrackedObject {
+// Case 3: DirtyTrackedObject.trackedChanged → @Tracked setter
+class TitleModel extends DirtyTrackedObject {
   private _title: string = "";
   @Tracked() accessor summary: string = "";
 
   get title(): string { return this._title; }
   @Tracked() set title(value: string) { this._title = value; }
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
     this.trackedChanged.subscribe(({ property, newValue }) => {
       if (property === "title") {
@@ -117,12 +117,12 @@ class TitleModel extends TrackedObject {
 }
 
 // Case 4: TrackedCollection.trackedChanged → @Tracked setter
-class CountedCollection extends TrackedObject {
+class CountedCollection extends DirtyTrackedObject {
   @Tracked() accessor count: number = 0;
 
   readonly items: TrackedCollection<string>;
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
     this.items = new TrackedCollection<string>(tracker);
     this.items.trackedChanged.subscribe(() => {
@@ -321,7 +321,7 @@ describe("Automatic composing – TrackedCollection.changed → @Tracked setter"
   });
 });
 
-describe("Automatic composing – TrackedObject.trackedChanged → @Tracked setter", () => {
+describe("Automatic composing – DirtyTrackedObject.trackedChanged → @Tracked setter", () => {
   it("property write inside trackedChanged listener composes into one undo step", () => {
     const tracker = new DirtyTracker();
     const model = tracker.construct(() => new TitleModel(tracker));

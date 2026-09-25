@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { TrackedContainer } from "../src/TrackedContainer";
-import { TrackedObject } from "../src/TrackedObject";
+import { DirtyTrackedContainer } from "../src/DirtyTrackedContainer";
+import { DirtyTrackedObject } from "../src/DirtyTrackedObject";
 import { TrackedCollection } from "../src/TrackedCollection";
 import { Tracker } from "../src/Tracker";
 import { DirtyTracker } from "../src/DirtyTracker";
@@ -8,35 +8,35 @@ import { Tracked } from "../src/Tracked";
 
 // ---- Models ----
 
-class ChildModel extends TrackedObject {
+class ChildModel extends DirtyTrackedObject {
   @Tracked((_, v: string) => (!v ? "Child name required" : undefined))
   accessor name: string = "";
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
-class SingleChildContainer extends TrackedContainer {
+class SingleChildContainer extends DirtyTrackedContainer {
   @Tracked((_, v: string) => (!v ? "Title required" : undefined))
   accessor title: string = "";
 
   constructor(
-    tracker: Tracker,
-    child: TrackedObject | TrackedCollection<unknown>,
+    tracker: DirtyTracker,
+    child: DirtyTrackedObject | TrackedCollection<any>,
   ) {
     super(tracker);
     this.trackChild(child);
   }
 }
 
-class MultiChildContainer extends TrackedContainer {
+class MultiChildContainer extends DirtyTrackedContainer {
   @Tracked()
   accessor note: string = "";
 
   constructor(
-    tracker: Tracker,
-    children: Array<TrackedObject | TrackedCollection<unknown>>,
+    tracker: DirtyTracker,
+    children: Array<DirtyTrackedObject | TrackedCollection<any>>,
   ) {
     super(tracker);
     for (const c of children) this.trackChild(c);
@@ -45,7 +45,7 @@ class MultiChildContainer extends TrackedContainer {
 
 // ---- isValid — own field ----
 
-describe("TrackedContainer – own @Tracked validators work normally", () => {
+describe("DirtyTrackedContainer – own @Tracked validators work normally", () => {
   it("own validator fires and populates validationMessages", () => {
     const tracker = new DirtyTracker();
     const items = new TrackedCollection<ChildModel>(tracker);
@@ -82,7 +82,7 @@ describe("TrackedContainer – own @Tracked validators work normally", () => {
 
 // ---- isValid — child object validity ----
 
-describe("TrackedContainer – isValid reflects TrackedObject child validity", () => {
+describe("DirtyTrackedContainer – isValid reflects DirtyTrackedObject child validity", () => {
   it("is false when a registered child object is invalid", () => {
     const tracker = new DirtyTracker();
     const child = tracker.construct(() => new ChildModel(tracker)); // name="" → invalid
@@ -141,7 +141,7 @@ describe("TrackedContainer – isValid reflects TrackedObject child validity", (
 
 // ---- isValid — collection child validity ----
 
-describe("TrackedContainer – isValid reflects TrackedCollection child validity", () => {
+describe("DirtyTrackedContainer – isValid reflects TrackedCollection child validity", () => {
   it("is false when a registered collection is invalid (fails its validator)", () => {
     const tracker = new DirtyTracker();
     const items = new TrackedCollection<string>(
@@ -182,8 +182,8 @@ describe("TrackedContainer – isValid reflects TrackedCollection child validity
 
 // ---- isValid — multiple children ----
 
-describe("TrackedContainer – multiple children: one invalid makes container invalid", () => {
-  it("is false when the first child (TrackedObject) is invalid", () => {
+describe("DirtyTrackedContainer – multiple children: one invalid makes container invalid", () => {
+  it("is false when the first child (DirtyTrackedObject) is invalid", () => {
     const tracker = new DirtyTracker();
     const childA = tracker.construct(() => new ChildModel(tracker)); // invalid
     const childB = tracker.construct(() => new ChildModel(tracker));
@@ -196,7 +196,7 @@ describe("TrackedContainer – multiple children: one invalid makes container in
     expect(container.trakrIsValid).toBe(false);
   });
 
-  it("is false when the second child (TrackedObject) is invalid", () => {
+  it("is false when the second child (DirtyTrackedObject) is invalid", () => {
     const tracker = new DirtyTracker();
     const childA = tracker.construct(() => new ChildModel(tracker));
     const childB = tracker.construct(() => new ChildModel(tracker)); // invalid
@@ -224,7 +224,7 @@ describe("TrackedContainer – multiple children: one invalid makes container in
     expect(container.trakrIsValid).toBe(true);
   });
 
-  it("is false when a TrackedCollection child is invalid and TrackedObject child is valid", () => {
+  it("is false when a TrackedCollection child is invalid and DirtyTrackedObject child is valid", () => {
     const tracker = new DirtyTracker();
     const childA = tracker.construct(() => new ChildModel(tracker));
     const childB = new TrackedCollection<string>(
@@ -246,7 +246,7 @@ describe("TrackedContainer – multiple children: one invalid makes container in
 
 // ---- isDirty ----
 
-describe("TrackedContainer – isDirty", () => {
+describe("DirtyTrackedContainer – isDirty", () => {
   it("is false when nothing has changed", () => {
     const tracker = new DirtyTracker();
     const child = tracker.construct(() => new ChildModel(tracker));
@@ -269,7 +269,7 @@ describe("TrackedContainer – isDirty", () => {
     expect(container.isDirty).toBe(true);
   });
 
-  it("is true when a registered child TrackedObject has a dirty field", () => {
+  it("is true when a registered child DirtyTrackedObject has a dirty field", () => {
     const tracker = new DirtyTracker();
     const child = tracker.construct(() => new ChildModel(tracker));
     const container = tracker.construct(
@@ -313,7 +313,7 @@ describe("TrackedContainer – isDirty", () => {
 
 // ---- collection item tracking ----
 
-describe("TrackedContainer – collection items are tracked automatically", () => {
+describe("DirtyTrackedContainer – collection items are tracked automatically", () => {
   it("item already in the collection at trackChild time makes container invalid", () => {
     const tracker = new DirtyTracker();
     const item = tracker.construct(() => new ChildModel(tracker)); // name="" → invalid
@@ -432,13 +432,13 @@ describe("TrackedContainer – collection items are tracked automatically", () =
 
 // ---- untrackChild ----
 
-describe("TrackedContainer – untrackChild", () => {
-  it("untracking a TrackedObject child stops its validity from affecting the container", () => {
+describe("DirtyTrackedContainer – untrackChild", () => {
+  it("untracking a DirtyTrackedObject child stops its validity from affecting the container", () => {
     const tracker = new DirtyTracker();
     const child = tracker.construct(() => new ChildModel(tracker)); // name="" → invalid
 
-    class DynamicContainer extends TrackedContainer {
-      constructor(t: Tracker) {
+    class DynamicContainer extends DirtyTrackedContainer {
+      constructor(t: DirtyTracker) {
         super(t);
         this.trackChild(child);
       }
@@ -458,8 +458,8 @@ describe("TrackedContainer – untrackChild", () => {
     const item = tracker.construct(() => new ChildModel(tracker)); // invalid
     const items = new TrackedCollection<ChildModel>(tracker, [item]);
 
-    class DynamicContainer extends TrackedContainer {
-      constructor(t: Tracker) {
+    class DynamicContainer extends DirtyTrackedContainer {
+      constructor(t: DirtyTracker) {
         super(t);
         this.trackChild(items);
       }
@@ -478,8 +478,8 @@ describe("TrackedContainer – untrackChild", () => {
     const tracker = new DirtyTracker();
     const items = new TrackedCollection<ChildModel>(tracker);
 
-    class DynamicContainer extends TrackedContainer {
-      constructor(t: Tracker) {
+    class DynamicContainer extends DirtyTrackedContainer {
+      constructor(t: DirtyTracker) {
         super(t);
         this.trackChild(items);
       }
@@ -499,8 +499,8 @@ describe("TrackedContainer – untrackChild", () => {
     const tracker = new DirtyTracker();
     const foreign = tracker.construct(() => new ChildModel(tracker));
 
-    class DynamicContainer extends TrackedContainer {
-      constructor(t: Tracker) { super(t); }
+    class DynamicContainer extends DirtyTrackedContainer {
+      constructor(t: DirtyTracker) { super(t); }
       remove() { this.untrackChild(foreign); }
     }
 

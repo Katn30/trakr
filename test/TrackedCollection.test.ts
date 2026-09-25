@@ -5,21 +5,21 @@ import {
   TrackedCollection,
   TrackedCollectionChanged,
 } from "../src/TrackedCollection";
-import { TrackedObject } from "../src/TrackedObject";
+import { DirtyTrackedObject } from "../src/DirtyTrackedObject";
 import { State } from "../src/State";
 import { Tracked } from "../src/Tracked";
 
-// Simple concrete TrackedObject for splice-state tests
-class SimpleItem extends TrackedObject {
+// Simple concrete DirtyTrackedObject for splice-state tests
+class SimpleItem extends DirtyTrackedObject {
   @Tracked()
   accessor label: string = "";
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
 describe("TrackedCollection", () => {
-  let tracker: Tracker;
+  let tracker: DirtyTracker;
   let collection: TrackedCollection<number>;
 
   beforeEach(() => {
@@ -49,7 +49,7 @@ describe("TrackedCollection", () => {
     });
 
     it("is not dirty initially", () => {
-      expect(collection.isDirty).toBe(false);
+      expect("isDirty" in collection).toBe(false); // collections carry no dirty state
       expect(tracker.isDirty).toBe(false);
     });
   });
@@ -618,7 +618,7 @@ describe("TrackedCollection", () => {
 // ---- reduce / reduceRight without initialValue ----
 
 describe("TrackedCollection — reduce/reduceRight without initialValue", () => {
-  let tracker: Tracker;
+  let tracker: DirtyTracker;
 
   beforeEach(() => {
     tracker = new DirtyTracker();
@@ -645,10 +645,10 @@ describe("TrackedCollection — reduce/reduceRight without initialValue", () => 
   });
 });
 
-// ---- TrackedObject items in splice ----
+// ---- DirtyTrackedObject items in splice ----
 
-describe("TrackedCollection — TrackedObject items get correct state on splice", () => {
-  let tracker: Tracker;
+describe("TrackedCollection — DirtyTrackedObject items get correct state on splice", () => {
+  let tracker: DirtyTracker;
 
   beforeEach(() => {
     tracker = new DirtyTracker();
@@ -713,14 +713,14 @@ describe("TrackedCollection — TrackedObject items get correct state on splice"
 
 // ---- Insert collapse — untracking and validity accounting ----
 
-class RequiredNameItem extends TrackedObject {
+class RequiredNameItem extends DirtyTrackedObject {
   @Tracked((_, v: string) => v.length > 0 ? undefined : "name required")
   accessor name: string = "";
-  constructor(tracker: Tracker) { super(tracker); }
+  constructor(tracker: DirtyTracker) { super(tracker); }
 }
 
 describe("TrackedCollection — Insert-remove untracks the item", () => {
-  let tracker: Tracker;
+  let tracker: DirtyTracker;
 
   beforeEach(() => {
     tracker = new DirtyTracker();
@@ -796,7 +796,7 @@ describe("TrackedCollection — Insert-remove untracks the item", () => {
 });
 
 describe("TrackedCollection — removing committed invalid items releases validity", () => {
-  let tracker: Tracker;
+  let tracker: DirtyTracker;
 
   beforeEach(() => {
     tracker = new DirtyTracker();

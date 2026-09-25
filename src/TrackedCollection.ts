@@ -1,28 +1,17 @@
 import { ITracked } from "./ITracked";
-import { State } from "./State";
 import { Tracker } from "./Tracker";
 import { OperationProperties } from "./OperationProperties";
 import { PropertyType } from "./PropertyType";
 import { TypedEvent } from "./TypedEvent";
-import { TrackedObject } from "./TrackedObject";
+import { TrackedObjectBase } from "./TrackedObjectBase";
 import { DependencyTracker, COLLECTION_VERSION_KEY } from "./DependencyTracker";
 
 export class TrackedCollection<T> implements Array<T>, ITracked {
   private _collection: T[];
-  private _isDirty: boolean;
   private _isValid: boolean;
-  private _dirtyCounter: number = 0;
   private _error: string | undefined;
   private readAccess(): void {
     DependencyTracker.record(this, COLLECTION_VERSION_KEY);
-  }
-
-  public get dirtyCounter(): number {
-    return this._dirtyCounter;
-  }
-
-  public get isDirty(): boolean {
-    return this._isDirty;
   }
 
   public get trakrIsValid(): boolean {
@@ -32,7 +21,7 @@ export class TrackedCollection<T> implements Array<T>, ITracked {
     const wasValid = this._isValid;
     this._isValid = value;
     if (wasValid !== value) {
-      this.tracker._onValidityChanged(wasValid, value);
+      this.tracker._onValidityChanged(!value);
     }
   }
 
@@ -83,18 +72,9 @@ export class TrackedCollection<T> implements Array<T>, ITracked {
     private readonly _validator?: (value: T[]) => string | undefined,
   ) {
     this._isValid = true;
-    this._isDirty = false;
     this._collection = items ? [...items] : [];
     this._validate();
     this.tracker._trackCollection(this);
-  }
-
-  /** @internal */
-  readonly trakrState = State.Unchanged as State;
-
-  /** @internal */
-  _setState(_value: State): void {
-    // Collections do not have a State — this satisfies the ITracked interface only.
   }
 
   /** @internal */
@@ -156,7 +136,7 @@ export class TrackedCollection<T> implements Array<T>, ITracked {
 
   private trackRemovedObjectDeletions(removed: T[]): void {
     for (const item of removed) {
-      if (item instanceof TrackedObject) {
+      if (item instanceof TrackedObjectBase) {
         item._markRemoved();
       }
     }
@@ -164,7 +144,7 @@ export class TrackedCollection<T> implements Array<T>, ITracked {
 
   private trackAddedObjectInsertions(added: T[]): void {
     for (const item of added) {
-      if (item instanceof TrackedObject) {
+      if (item instanceof TrackedObjectBase) {
         item._markAdded();
       }
     }

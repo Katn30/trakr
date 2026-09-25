@@ -1,5 +1,6 @@
 import { Tracker } from "./Tracker";
 import { TrackedObject } from "./TrackedObject";
+import { TrackedObjectBase } from "./TrackedObjectBase";
 import { Operation } from "./Operation";
 import { TypedEvent } from "./TypedEvent";
 import {
@@ -129,8 +130,21 @@ function difference<T>(a: Set<T>, b: Set<T>): T[] {
  * appends a compensating event.
  */
 export class EventTracker extends Tracker {
+  declare public readonly trackedObjects: TrackedObject[];
+
   /** @internal */
-  public readonly _tracksObjectState = false;
+  public _assertAccepts(obj: TrackedObjectBase): void {
+    if (!(obj instanceof TrackedObject)) {
+      throw new TypeError(
+        `${obj.constructor.name} cannot be tracked by an EventTracker: its models extend ` +
+        "TrackedObject (or TrackedContainer). DirtyTrackedObject models belong to a DirtyTracker.",
+      );
+    }
+  }
+
+  public override getByTrackingId(trackingId: number): TrackedObject | undefined {
+    return super.getByTrackingId(trackingId) as TrackedObject | undefined;
+  }
 
   private readonly _log: MutableEvent[] = [];
   private readonly _byId = new Map<number, MutableEvent>();

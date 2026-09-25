@@ -17,13 +17,13 @@ class Doc extends TrackedObject {
   @EventTracked(undefined, undefined, { eventType: "Renamed", coalesceWithin: 60_000 }) accessor title: string = "";
   @EventTracked(undefined, undefined, { eventType: "Retagged" }) accessor tag: string = "";
   @EventTracked(undefined, undefined, { eventType: "Noted", history: true }) accessor note: string = "";
-  constructor(t: Tracker) { super(t); }
+  constructor(t: EventTracker) { super(t); }
 }
 
 class Line extends TrackedObject {
   @AutoId id: number = 0;
   @EventTracked((_self, v: string) => (v === "" ? "required" : undefined)) accessor text: string = "x";
-  constructor(t: Tracker, text = "x") {
+  constructor(t: EventTracker, text = "x") {
     super(t);
     this.text = text;
   }
@@ -170,7 +170,7 @@ describe("EventTracker.events — one entry per operation", () => {
     class Issue extends TrackedObject {
       @Id id: string = "i1";
       @EventTracked(undefined, undefined, { eventType: "Opened" }) accessor status: string = "";
-      constructor(t: Tracker) { super(t); this.status = "open"; }
+      constructor(t: EventTracker) { super(t); this.status = "open"; }
     }
     const tracker = new EventTracker();
     tracker.new(() => new Issue(tracker));
@@ -374,7 +374,7 @@ describe("EventTracker undo/redo — Undone if unsent, compensated if committed"
     tracker.onCommit(pendingIds(tracker), [{ trackingId: a.trakrId, value: 9 }]);
     tracker.undo();
     expect(order.lines.collection).toContain(a);
-    expect(a.trakrState).toBe(State.Unchanged);
+    expect("trakrState" in a).toBe(false);
     expect(tracker.pendingEvents.map((e) => e.payload)).toEqual([
       { lines: { added: [], removed: [], changed: [{ id: 1, text: "existing" }] } },
     ]);
@@ -470,7 +470,7 @@ describe("EventTracker.discardPendingChanges", () => {
     class Issue extends TrackedObject {
       @Id id: string = "i1";
       @EventTracked() accessor status: string = "";
-      constructor(t: Tracker) { super(t); this.status = "open"; }
+      constructor(t: EventTracker) { super(t); this.status = "open"; }
     }
     tracker.new(() => new Issue(tracker));
     tracker.discardPendingChanges();

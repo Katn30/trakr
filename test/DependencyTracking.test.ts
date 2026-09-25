@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { Tracker } from "../src/Tracker";
 import { DirtyTracker } from "../src/DirtyTracker";
-import { TrackedObject } from "../src/TrackedObject";
+import { DirtyTrackedObject } from "../src/DirtyTrackedObject";
 import { TrackedCollection } from "../src/TrackedCollection";
 import { Tracked } from "../src/Tracked";
 
@@ -20,7 +20,7 @@ let flatValidatorCalls = 0;
 
 // ---- Models ----
 
-class OrderModel extends TrackedObject {
+class OrderModel extends DirtyTrackedObject {
   @Tracked()
   accessor maxQuantity: number = 10;
 
@@ -33,21 +33,21 @@ class OrderModel extends TrackedObject {
   @Tracked()
   accessor notes: string = "";
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
-class BudgetModel extends TrackedObject {
+class BudgetModel extends DirtyTrackedObject {
   @Tracked()
   accessor limit: number = 100;
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
-class ExpenseModel extends TrackedObject {
+class ExpenseModel extends DirtyTrackedObject {
   @Tracked()
   accessor budget: BudgetModel | undefined = undefined;
 
@@ -58,14 +58,14 @@ class ExpenseModel extends TrackedObject {
   })
   accessor amount: number = 0;
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
 // useA=true  → active dep is valueA
 // useA=false → active dep is valueB
-class ConditionalModel extends TrackedObject {
+class ConditionalModel extends DirtyTrackedObject {
   @Tracked()
   accessor useA: boolean = true;
 
@@ -81,12 +81,12 @@ class ConditionalModel extends TrackedObject {
   })
   accessor label: string = "";
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
-class CartModel extends TrackedObject {
+class CartModel extends DirtyTrackedObject {
   readonly items: TrackedCollection<number>;
 
   @Tracked((self: CartModel, _v: string) => {
@@ -95,14 +95,14 @@ class CartModel extends TrackedObject {
   })
   accessor name: string = "cart";
 
-  constructor(tracker: Tracker, items: TrackedCollection<number>) {
+  constructor(tracker: DirtyTracker, items: TrackedCollection<number>) {
     super(tracker);
     this.items = items;
   }
 }
 
 // Validator only uses the passed value — no cross-property reads via self.xxx.
-class SelfOnlyModel extends TrackedObject {
+class SelfOnlyModel extends DirtyTrackedObject {
   @Tracked()
   accessor unrelated: number = 0;
 
@@ -112,13 +112,13 @@ class SelfOnlyModel extends TrackedObject {
   })
   accessor label: string = "hello";
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
 // Bug 1: two validators that both read the same property (sharedDep).
-class SharedDepModel extends TrackedObject {
+class SharedDepModel extends DirtyTrackedObject {
   @Tracked()
   accessor sharedDep: number = 10;
 
@@ -134,22 +134,22 @@ class SharedDepModel extends TrackedObject {
   })
   accessor field2: number = 0;
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
 // Bug 2: dependent object reads a property from a source object.
-class BugSourceModel extends TrackedObject {
+class BugSourceModel extends DirtyTrackedObject {
   @Tracked()
   accessor value: number = 0;
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
-class BugDependentModel extends TrackedObject {
+class BugDependentModel extends DirtyTrackedObject {
   @Tracked()
   accessor source: BugSourceModel | undefined = undefined;
 
@@ -158,13 +158,13 @@ class BugDependentModel extends TrackedObject {
   })
   accessor amount: number = 0;
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
 // Bug 3: validator that calls flat() on the collection.
-class FlatModel extends TrackedObject {
+class FlatModel extends DirtyTrackedObject {
   readonly matrix: TrackedCollection<number[]>;
 
   @Tracked((self: FlatModel, _v: string) => {
@@ -173,7 +173,7 @@ class FlatModel extends TrackedObject {
   })
   accessor name: string = "";
 
-  constructor(tracker: Tracker, matrix: TrackedCollection<number[]>) {
+  constructor(tracker: DirtyTracker, matrix: TrackedCollection<number[]>) {
     super(tracker);
     this.matrix = matrix;
   }
@@ -183,7 +183,7 @@ class FlatModel extends TrackedObject {
 
 describe("Dependency tracking", () => {
   describe("same-object property dependencies", () => {
-    let tracker: Tracker;
+    let tracker: DirtyTracker;
     let order: OrderModel;
 
     beforeEach(() => {
@@ -226,7 +226,7 @@ describe("Dependency tracking", () => {
   });
 
   describe("cross-object dependencies", () => {
-    let tracker: Tracker;
+    let tracker: DirtyTracker;
     let budget: BudgetModel;
     let expense: ExpenseModel;
 
@@ -273,7 +273,7 @@ describe("Dependency tracking", () => {
   });
 
   describe("conditional dependencies", () => {
-    let tracker: Tracker;
+    let tracker: DirtyTracker;
     let model: ConditionalModel;
 
     beforeEach(() => {
@@ -324,7 +324,7 @@ describe("Dependency tracking", () => {
   });
 
   describe("TrackedCollection dependencies", () => {
-    let tracker: Tracker;
+    let tracker: DirtyTracker;
     let cart: CartModel;
     let items: TrackedCollection<number>;
 
@@ -372,7 +372,7 @@ describe("Dependency tracking", () => {
   });
 
   describe("self-only dependency (no cross-property reads)", () => {
-    let tracker: Tracker;
+    let tracker: DirtyTracker;
     let model: SelfOnlyModel;
 
     beforeEach(() => {
@@ -395,7 +395,7 @@ describe("Dependency tracking", () => {
   // ------------------------------------------------------------------ Bug 1
 
   describe("Bug 1: mutation during iteration (multiple validators on same dep)", () => {
-    let tracker: Tracker;
+    let tracker: DirtyTracker;
     let model: SharedDepModel;
 
     beforeEach(() => {
@@ -441,7 +441,7 @@ describe("Dependency tracking", () => {
   // ------------------------------------------------------------------ Bug 2
 
   describe("Bug 2: stale dep entries after object destruction", () => {
-    let tracker: Tracker;
+    let tracker: DirtyTracker;
     let src: BugSourceModel;
     let dep: BugDependentModel;
 
@@ -477,7 +477,7 @@ describe("Dependency tracking", () => {
   // ------------------------------------------------------------------ Bug 3
 
   describe("Bug 3: TrackedCollection.flat() bypasses readAccess()", () => {
-    let tracker: Tracker;
+    let tracker: DirtyTracker;
     let model: FlatModel;
     let matrix: TrackedCollection<number[]>;
 
@@ -516,16 +516,16 @@ let validatorBCalls = 0;
 let sharedColCallsA = 0;
 let sharedColCallsB = 0;
 
-class SourceModel extends TrackedObject {
+class SourceModel extends DirtyTrackedObject {
   @Tracked()
   accessor value: number = 0;
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
-class DependentA extends TrackedObject {
+class DependentA extends DirtyTrackedObject {
   @Tracked()
   accessor source: SourceModel | undefined = undefined;
 
@@ -535,12 +535,12 @@ class DependentA extends TrackedObject {
   })
   accessor amount: number = 0;
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
-class DependentB extends TrackedObject {
+class DependentB extends DirtyTrackedObject {
   @Tracked()
   accessor source: SourceModel | undefined = undefined;
 
@@ -550,12 +550,12 @@ class DependentB extends TrackedObject {
   })
   accessor amount: number = 0;
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
-class UndoModel extends TrackedObject {
+class UndoModel extends DirtyTrackedObject {
   @Tracked()
   accessor limit: number = 10;
 
@@ -564,12 +564,12 @@ class UndoModel extends TrackedObject {
   })
   accessor value: number = 0;
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
-class TwoValidatorsModel extends TrackedObject {
+class TwoValidatorsModel extends DirtyTrackedObject {
   readonly col: TrackedCollection<number>;
 
   @Tracked((self: TwoValidatorsModel, _v: string) => {
@@ -584,7 +584,7 @@ class TwoValidatorsModel extends TrackedObject {
   })
   accessor nameB: string = "";
 
-  constructor(tracker: Tracker, col: TrackedCollection<number>) {
+  constructor(tracker: DirtyTracker, col: TrackedCollection<number>) {
     super(tracker);
     this.col = col;
   }
@@ -592,17 +592,17 @@ class TwoValidatorsModel extends TrackedObject {
 
 let collectionCrossDepCalls = 0;
 
-class ThresholdModel extends TrackedObject {
+class ThresholdModel extends DirtyTrackedObject {
   @Tracked()
   accessor threshold: number = 3;
 
-  constructor(tracker: Tracker) {
+  constructor(tracker: DirtyTracker) {
     super(tracker);
   }
 }
 
 describe("Dependency tracking — integration", () => {
-  let tracker: Tracker;
+  let tracker: DirtyTracker;
 
   beforeEach(() => {
     tracker = new DirtyTracker();
