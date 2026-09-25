@@ -6,10 +6,6 @@ export class OperationProperties {
     public readonly trackedObject: ITracked,
     public readonly property: string | undefined,
     public readonly type: PropertyType,
-    public readonly validator?: (
-      trackedObjects: any,
-      newValue: any,
-    ) => string | undefined,
     public readonly coalesceWithin?: number,
   ) {}
 }

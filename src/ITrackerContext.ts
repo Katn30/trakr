@@ -8,7 +8,6 @@ export interface ITrackerContext {
   canUndo: boolean;
   canRedo: boolean;
   trackedObjects: TrackedObject[];
-  deletedObjects: TrackedObject[];
   undo(): void;
   redo(): void;
   isDirtyChanged: TypedEvent<boolean>;

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { Tracker } from "../src/Tracker";
+import { DirtyTracker } from "../src/DirtyTracker";
 import {
   TrackedCollection,
   TrackedCollectionChanged,
@@ -22,7 +23,7 @@ describe("TrackedCollection", () => {
   let collection: TrackedCollection<number>;
 
   beforeEach(() => {
-    tracker = new Tracker();
+    tracker = new DirtyTracker();
     collection = new TrackedCollection<number>(tracker, [1, 2, 3]);
   });
 
@@ -620,7 +621,7 @@ describe("TrackedCollection — reduce/reduceRight without initialValue", () => 
   let tracker: Tracker;
 
   beforeEach(() => {
-    tracker = new Tracker();
+    tracker = new DirtyTracker();
   });
 
   it("reduce(fn) without initialValue uses the first element as accumulator", () => {
@@ -650,7 +651,7 @@ describe("TrackedCollection — TrackedObject items get correct state on splice"
   let tracker: Tracker;
 
   beforeEach(() => {
-    tracker = new Tracker();
+    tracker = new DirtyTracker();
   });
 
   it("item pushed to a collection is marked New", () => {
@@ -722,7 +723,7 @@ describe("TrackedCollection — Insert-remove untracks the item", () => {
   let tracker: Tracker;
 
   beforeEach(() => {
-    tracker = new Tracker();
+    tracker = new DirtyTracker();
   });
 
   it("invalid Insert item removed from collection restores tracker.isValid", () => {
@@ -798,7 +799,7 @@ describe("TrackedCollection — removing committed invalid items releases validi
   let tracker: Tracker;
 
   beforeEach(() => {
-    tracker = new Tracker();
+    tracker = new DirtyTracker();
   });
 
   it("removing an invalid Changed item restores tracker.isValid", () => {

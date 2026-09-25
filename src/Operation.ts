@@ -44,6 +44,30 @@ export class Operation {
     }
   }
 
+  /**
+   * Chains an effect onto the most recent action targeting the same object and
+   * property, so it runs right after that action on both undo and redo. The
+   * caller guarantees such an action exists.
+   */
+  public attachAfter(
+    properties: OperationProperties,
+    redoEffect: () => void,
+    undoEffect: () => void,
+  ): void {
+    const idx = this.actions.findLastIndex(
+      (c) =>
+        c.properties.trackedObject === properties.trackedObject &&
+        c.properties.property === properties.property,
+    );
+    const target = this.actions[idx];
+    this.actions[idx] = new Change(
+      target.number,
+      () => { target.redoAction(); redoEffect(); },
+      () => { target.undoAction(); undoEffect(); },
+      target.properties,
+    );
+  }
+
   public redo(): void {
     this.actions.reverse().forEach((x) => x.redoAction());
   }

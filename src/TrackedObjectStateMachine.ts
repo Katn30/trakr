@@ -15,7 +15,6 @@ export interface StateTarget {
   trakrId: number;
   trakrState: State;
   _setState(value: State): void;
-  _getDirtyCounter(): number;
   _setDirtyCounter(value: number): void;
 }
 

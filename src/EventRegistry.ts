@@ -1,5 +1,8 @@
 import { TrackedObject } from "./TrackedObject";
+import type { Tracker } from "./Tracker";
 import { Change } from "./Change";
+import { OperationProperties } from "./OperationProperties";
+import { PropertyType } from "./PropertyType";
 
 const EVENT_METADATA = Symbol("eventMetadata");
 
@@ -33,6 +36,24 @@ const instanceHistory = new WeakMap<TrackedObject, Map<string, unknown[]>>();
 const instanceHistoryTimes = new WeakMap<TrackedObject, Map<string, number>>();
 const subscribedInstances = new WeakSet<TrackedObject>();
 const itemOriginCollection = new WeakMap<TrackedObject, object>();
+
+// ------------------------------------------------------------------ replay effects
+
+/**
+ * History entries and collection ops are pending-entry lists, not diffs, so an
+ * undo/redo cannot be derived by comparing values. Each write therefore chains
+ * an effect onto its own action in the operation: undoing/redoing exactly that
+ * operation appends the entry that reverts (or re-applies) the write. Whether
+ * the resulting event is withdrawn or kept as a compensation is decided by the
+ * EventTracker, which settles these lists after every operation.
+ */
+export function recordReplayEffect(
+  tracker: Tracker,
+  properties: OperationProperties,
+  append: (direction: "undo" | "redo") => void,
+): void {
+  tracker._recordSideEffect(() => append("redo"), () => append("undo"), properties);
+}
 
 // Symbol used to sentinel the "default" (ungrouped) bucket in event emission.
 export const DEFAULT_GROUP = "";
@@ -82,18 +103,6 @@ export function getEventMetadata(proto: object): EventMetadataMap {
   return merged;
 }
 
-export function hasAnyEventMetadata(proto: object): boolean {
-  let current: object | null = proto;
-  while (current) {
-    if (hasOwnEventMetadata(current)) {
-      const own = ownEventMetadata(current);
-      if (own && own.size > 0) return true;
-    }
-    current = Object.getPrototypeOf(current);
-  }
-  return false;
-}
-
 // ------------------------------------------------------------------ tracker context stack
 
 const contextStacks = new WeakMap<object, unknown[]>();
@@ -108,8 +117,8 @@ export function pushContext(tracker: object, ctx: unknown): void {
 }
 
 export function popContext(tracker: object): void {
-  const stack = contextStacks.get(tracker);
-  if (stack && stack.length > 0) stack.pop();
+  // Always paired with a preceding pushContext (see EventTracker.withContext).
+  contextStacks.get(tracker)!.pop();
 }
 
 export function peekContext(tracker: object): unknown {
@@ -128,6 +137,8 @@ export function ensureEventStateSubscription(target: TrackedObject): void {
     if (!propMeta) return;
 
     if (propMeta.history) {
+      // Replays are handled by the effect recorded on the operation itself.
+      if (target.tracker._isReplaying) return;
       appendHistoryEntry(
         target,
         evt.property,
@@ -185,21 +196,38 @@ function appendHistoryEntry(
     now - lastTime < coalesceWithin &&
     chain.length > 0;
 
-  let entry: unknown;
+  const entry = createHistoryEntry(target, property, newValue, oldValue, historyConfig);
+  if (shouldReplace) chain[chain.length - 1] = entry;
+  else chain.push(entry);
+  times.set(property, now);
+
+  recordReplayEffect(
+    target.tracker,
+    new OperationProperties(target, property, PropertyType.Object),
+    (direction) => {
+      const [value, previous] = direction === "undo" ? [oldValue, newValue] : [newValue, oldValue];
+      // Looked up on every replay: settling after each operation replaces the chains map.
+      const chains = getOrCreateHistoryState(target);
+      chains.set(property, [...(chains.get(property) ?? []), createHistoryEntry(target, property, value, previous, historyConfig)]);
+      // A replay breaks any coalescing window: the next write starts a new entry.
+      instanceHistoryTimes.get(target)?.delete(property);
+    },
+  );
+}
+
+function createHistoryEntry(
+  target: TrackedObject,
+  property: string,
+  newValue: unknown,
+  oldValue: unknown,
+  historyConfig: HistoryConfig,
+): unknown {
   if (typeof historyConfig === "object" && historyConfig.entryFactory) {
     const ctx = peekContext(target.tracker);
     const change = { time: new Date() } as unknown as Change;
-    entry = historyConfig.entryFactory(target, newValue, oldValue, change, ctx);
-  } else {
-    entry = { property, value: newValue };
+    return historyConfig.entryFactory(target, newValue, oldValue, change, ctx);
   }
-
-  if (shouldReplace) {
-    chain[chain.length - 1] = entry;
-  } else {
-    chain.push(entry);
-  }
-  times.set(property, now);
+  return { property, value: newValue };
 }
 
 function getOrCreateHistoryTimes(target: TrackedObject): Map<string, number> {
@@ -243,13 +271,40 @@ export function clearEventState(target: TrackedObject): void {
   instanceHistoryTimes.delete(target);
 }
 
-export function popHistoryEntry(target: TrackedObject, property: string): void {
-  const chains = instanceHistory.get(target);
-  if (!chains) return;
-  const chain = chains.get(property);
-  if (!chain) return;
-  chain.pop();
-  if (chain.length === 0) chains.delete(property);
+/**
+ * Moves the persisted baseline of a non-history field to `persistedValue`.
+ * The field stays pending only if its current value differs from it — which is
+ * how writes landing while the save was in flight survive the ack.
+ */
+export function ackFieldValue(target: TrackedObject, property: string, persistedValue: unknown): void {
+  const state = getOrCreateEventState(target);
+  const current = (target as unknown as Record<string, unknown>)[property];
+  if (current === persistedValue) {
+    state.delete(property);
+    return;
+  }
+  const entry = state.get(property);
+  if (entry) {
+    entry.originalValue = persistedValue;
+  } else {
+    state.set(property, { originalValue: persistedValue, currentValue: current });
+  }
+}
+
+/**
+ * Forgets what an operation changed once its events are recorded: field diffs
+ * and history chains start empty for the next operation. Coalescing timestamps
+ * are kept so a following write can still merge into the same operation.
+ */
+export function settleEventState(target: TrackedObject): void {
+  instanceState.delete(target);
+  instanceHistory.delete(target);
+}
+
+/** Puts recorded history entries back at the front of the chain (coalescing reopens them). */
+export function restoreHistoryEntries(target: TrackedObject, property: string, entries: readonly unknown[]): void {
+  const chains = getOrCreateHistoryState(target);
+  chains.set(property, [...entries, ...(chains.get(property) ?? [])]);
 }
 
 export function recordItemOrigin(item: TrackedObject, collection: object): void {

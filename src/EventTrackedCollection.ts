@@ -4,10 +4,12 @@ import { TrackedObject } from "./TrackedObject";
 import { EventLifecycleOptions } from "./GeneratedEvent";
 import {
   recordItemOrigin,
-  HistoryConfig,
-  HistoryOptions,
   peekContext,
+  clearEventState,
+  recordReplayEffect,
 } from "./EventRegistry";
+import { OperationProperties } from "./OperationProperties";
+import { PropertyType } from "./PropertyType";
 import {
   getIdentityProperties,
   getIdentity,
@@ -16,8 +18,14 @@ import {
 import { getEventMetadata } from "./EventRegistry";
 import { Change } from "./Change";
 
+export type CollectionOpKind = "add" | "remove" | "change";
+
 export interface CollectionHistoryOptions<T = any> {
-  entryFactory: (self: T, change: Change, ctx?: unknown) => unknown;
+  /**
+   * Builds one history entry. `op` says what happened to `self`; compensating
+   * entries emitted by undo-after-commit carry the inverse kind.
+   */
+  entryFactory: (self: T, change: Change, ctx: unknown, op: CollectionOpKind) => unknown;
 }
 
 export type CollectionHistoryConfig = boolean | CollectionHistoryOptions;
@@ -29,9 +37,10 @@ export interface EventTrackedCollectionOptions<T = any, TEventType extends strin
   owner?: { object: TrackedObject; property: string };
 }
 
-interface CollectionOp {
-  op: "add" | "remove" | "change";
-  item?: TrackedObject;
+/** @internal */
+export interface CollectionOp {
+  op: CollectionOpKind;
+  item: TrackedObject;
   identity?: unknown;
   diff?: Record<string, unknown>;
   raw?: unknown;
@@ -44,6 +53,7 @@ export class EventTrackedCollection<
 > extends TrackedCollection<T> {
   private readonly _eventOptions: EventTrackedCollectionOptions<T, TEventType> | undefined;
   private readonly _historyOps: CollectionOp[] = [];
+  // Items as last persisted (acknowledged). Pending added/removed = diff against it.
   private readonly _baselineItems: Set<T> = new Set();
 
   public constructor(
@@ -60,6 +70,8 @@ export class EventTrackedCollection<
       if (item instanceof TrackedObject) {
         recordItemOrigin(item, this);
         this._validateItemHasIdentity(item);
+        // Initial items are the persisted baseline — nothing about them is pending.
+        if (this._eventOptions) clearEventState(item);
       }
     }
 
@@ -70,17 +82,22 @@ export class EventTrackedCollection<
           this._validateItemHasIdentity(item);
         }
       }
-      if (this._isAggregateMode() && !this.tracker._isReplaying) {
-        for (const item of evt.added) {
-          if (item instanceof TrackedObject) {
-            this._recordAddOp(item);
-          }
-        }
-        for (const item of evt.removed) {
-          if (item instanceof TrackedObject) {
-            this._recordRemoveOp(item);
-          }
-        }
+      // Replays are handled by the effects recorded on the operation itself.
+      if (this.tracker._isReplaying) return;
+      if (this.tracker._isTrackingSuppressed) {
+        // Silent writes (construct(), withTrackingSuppressed) are not events:
+        // like suppressed field writes, they simply become the baseline.
+        for (const item of evt.added) this._baselineItems.add(item);
+        for (const item of evt.removed) this._baselineItems.delete(item);
+        return;
+      }
+      if (!this._isHistoryMode()) return;
+      const properties = new OperationProperties(this, undefined, PropertyType.Collection);
+      for (const item of evt.added) {
+        if (item instanceof TrackedObject) this._recordOp("add", item, properties);
+      }
+      for (const item of evt.removed) {
+        if (item instanceof TrackedObject) this._recordOp("remove", item, properties);
       }
     });
 
@@ -110,12 +127,26 @@ export class EventTrackedCollection<
     return this._historyOps;
   }
 
-  /** @internal */
+  /** @internal Forgets pending ops: current items become the baseline. */
   public _clearHistoryOps(): void {
     this._historyOps.length = 0;
-    // Rebaseline: current collection items become baseline.
-    this._baselineItems.clear();
-    for (const item of this.collection) this._baselineItems.add(item);
+    this._rebaseline();
+  }
+
+  /** @internal Puts recorded ops back (coalescing reopens them) and undoes their effect on the baseline. */
+  public _restoreOps(ops: readonly CollectionOp[]): void {
+    // Newest first, so an add followed by a remove of the same item nets out.
+    for (const op of [...ops].reverse()) {
+      if (op.op === "add") this._baselineItems.delete(op.item as unknown as T);
+      else if (op.op === "remove") this._baselineItems.add(op.item as unknown as T);
+    }
+    this._historyOps.unshift(...ops);
+  }
+
+  /** @internal Sets whether `item` counts as already recorded in this collection. */
+  public _setInBaseline(item: T, present: boolean): void {
+    if (present) this._baselineItems.add(item);
+    else this._baselineItems.delete(item);
   }
 
   /** @internal */
@@ -157,11 +188,10 @@ export class EventTrackedCollection<
 
   private _attachItemChangeWatchers(): void {
     const watchItem = (item: TrackedObject) => {
-      item.changed.subscribe((_evt) => {
-        // Only record if item is currently in the collection AND we're not replaying.
+      item.changed.subscribe((evt) => {
         if (this.tracker._isReplaying) return;
         if (!this.collection.includes(item as unknown as T)) return;
-        this._recordChangeOp(item);
+        this._recordOp("change", item, new OperationProperties(item, evt.property, PropertyType.Object));
       });
     };
     for (const item of this.collection) {
@@ -174,64 +204,43 @@ export class EventTrackedCollection<
     });
   }
 
-  private _recordAddOp(item: TrackedObject): void {
-    const opts = this._eventOptions;
-    if (typeof opts?.history === "object" && opts.history.entryFactory) {
-      const ctx = peekContext(this.tracker);
-      const change = { time: new Date() } as unknown as Change;
-      this._historyOps.push({
-        op: "add",
-        raw: opts.history.entryFactory(item as any, change, ctx),
-      });
-    } else if (opts?.history === true) {
-      this._historyOps.push({ op: "add", item, snapshot: snapshotItemAtRecordTime(item) });
-    }
+  // Undo/redo of the operation appends the op that reverts (or re-applies) this one.
+  private _recordOp(kind: CollectionOpKind, item: TrackedObject, properties: OperationProperties): void {
+    this._historyOps.push(this._buildOp(kind, item));
+    recordReplayEffect(this.tracker, properties, (direction) => {
+      this._historyOps.push(this._buildOp(direction === "undo" ? invertOpKind(kind) : kind, item));
+    });
   }
 
-  private _recordRemoveOp(item: TrackedObject): void {
+  private _buildOp(kind: CollectionOpKind, item: TrackedObject): CollectionOp {
     const opts = this._eventOptions;
-    const identity = getIdentity(item);
     if (typeof opts?.history === "object" && opts.history.entryFactory) {
       const ctx = peekContext(this.tracker);
       const change = { time: new Date() } as unknown as Change;
-      this._historyOps.push({
-        op: "remove",
-        raw: opts.history.entryFactory(item as any, change, ctx),
-      });
-    } else if (opts?.history === true) {
-      this._historyOps.push({ op: "remove", identity });
+      return { op: kind, item, raw: opts.history.entryFactory(item as any, change, ctx, kind) };
     }
+    if (kind === "add") return { op: kind, item, snapshot: snapshotItemAtRecordTime(item) };
+    if (kind === "remove") return { op: kind, item, identity: getIdentity(item) };
+    return { op: kind, item, identity: getIdentity(item), diff: this._recordChangeOpDiff(item) };
   }
 
   private _recordChangeOpDiff(item: TrackedObject): Record<string, unknown> {
     const proto = Object.getPrototypeOf(item);
-    const idProps = getIdentityProperties(proto);
     const meta = getEventMetadata(proto);
     const rec = item as unknown as Record<string, unknown>;
     const diff: Record<string, unknown> = {};
     for (const [propName] of meta) {
-      if (idProps.includes(propName)) continue;
       const v = rec[propName];
       diff[propName] = v === undefined ? null : v;
     }
     return diff;
   }
+}
 
-  private _recordChangeOp(item: TrackedObject): void {
-    const opts = this._eventOptions;
-    if (typeof opts?.history === "object" && opts.history.entryFactory) {
-      const ctx = peekContext(this.tracker);
-      const change = { time: new Date() } as unknown as Change;
-      this._historyOps.push({
-        op: "change",
-        raw: opts.history.entryFactory(item as any, change, ctx),
-      });
-    } else if (opts?.history === true) {
-      const identity = getIdentity(item);
-      const diff = this._recordChangeOpDiff(item);
-      this._historyOps.push({ op: "change", identity, item, diff });
-    }
-  }
+function invertOpKind(kind: CollectionOpKind): CollectionOpKind {
+  if (kind === "add") return "remove";
+  if (kind === "remove") return "add";
+  return "change";
 }
 
 function snapshotItemAtRecordTime(item: TrackedObject): Record<string, unknown> {
@@ -246,7 +255,6 @@ function snapshotItemAtRecordTime(item: TrackedObject): Record<string, unknown> 
     else snap[idProp] = rec[idProp];
   }
   for (const [propName] of meta) {
-    if (idProps.includes(propName)) continue;
     const v = rec[propName];
     snap[propName] = v === undefined ? null : v;
   }

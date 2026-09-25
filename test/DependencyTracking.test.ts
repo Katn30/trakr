@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { Tracker } from "../src/Tracker";
+import { DirtyTracker } from "../src/DirtyTracker";
 import { TrackedObject } from "../src/TrackedObject";
 import { TrackedCollection } from "../src/TrackedCollection";
 import { Tracked } from "../src/Tracked";
@@ -186,7 +187,7 @@ describe("Dependency tracking", () => {
     let order: OrderModel;
 
     beforeEach(() => {
-      tracker = new Tracker();
+      tracker = new DirtyTracker();
       order = tracker.construct(() => new OrderModel(tracker));
       sameObjCalls = 0;
     });
@@ -230,7 +231,7 @@ describe("Dependency tracking", () => {
     let expense: ExpenseModel;
 
     beforeEach(() => {
-      tracker = new Tracker();
+      tracker = new DirtyTracker();
       tracker.construct(() => {
         budget = new BudgetModel(tracker);
         expense = new ExpenseModel(tracker);
@@ -276,7 +277,7 @@ describe("Dependency tracking", () => {
     let model: ConditionalModel;
 
     beforeEach(() => {
-      tracker = new Tracker();
+      tracker = new DirtyTracker();
       model = tracker.construct(() => new ConditionalModel(tracker));
       conditionalCalls = 0;
     });
@@ -328,7 +329,7 @@ describe("Dependency tracking", () => {
     let items: TrackedCollection<number>;
 
     beforeEach(() => {
-      tracker = new Tracker();
+      tracker = new DirtyTracker();
       items = new TrackedCollection<number>(tracker, [1, 2, 3]);
       cart = tracker.construct(() => new CartModel(tracker, items));
       collectionCalls = 0;
@@ -375,7 +376,7 @@ describe("Dependency tracking", () => {
     let model: SelfOnlyModel;
 
     beforeEach(() => {
-      tracker = new Tracker();
+      tracker = new DirtyTracker();
       model = tracker.construct(() => new SelfOnlyModel(tracker));
       selfOnlyCalls = 0;
     });
@@ -398,7 +399,7 @@ describe("Dependency tracking", () => {
     let model: SharedDepModel;
 
     beforeEach(() => {
-      tracker = new Tracker();
+      tracker = new DirtyTracker();
       model = tracker.construct(() => new SharedDepModel(tracker));
       field1Calls = 0;
       field2Calls = 0;
@@ -445,7 +446,7 @@ describe("Dependency tracking", () => {
     let dep: BugDependentModel;
 
     beforeEach(() => {
-      tracker = new Tracker();
+      tracker = new DirtyTracker();
       tracker.construct(() => {
         src = new BugSourceModel(tracker);
         dep = new BugDependentModel(tracker);
@@ -481,7 +482,7 @@ describe("Dependency tracking", () => {
     let matrix: TrackedCollection<number[]>;
 
     beforeEach(() => {
-      tracker = new Tracker();
+      tracker = new DirtyTracker();
       matrix = new TrackedCollection<number[]>(tracker, [[1, 2], [3, 4]]);
       model = tracker.construct(() => new FlatModel(tracker, matrix));
       flatValidatorCalls = 0;
@@ -604,7 +605,7 @@ describe("Dependency tracking — integration", () => {
   let tracker: Tracker;
 
   beforeEach(() => {
-    tracker = new Tracker();
+    tracker = new DirtyTracker();
     validatorACalls = 0;
     validatorBCalls = 0;
     sharedColCallsA = 0;

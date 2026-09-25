@@ -3,6 +3,7 @@ import { TrackedContainer } from "../src/TrackedContainer";
 import { TrackedObject } from "../src/TrackedObject";
 import { TrackedCollection } from "../src/TrackedCollection";
 import { Tracker } from "../src/Tracker";
+import { DirtyTracker } from "../src/DirtyTracker";
 import { Tracked } from "../src/Tracked";
 
 // ---- Models ----
@@ -46,7 +47,7 @@ class MultiChildContainer extends TrackedContainer {
 
 describe("TrackedContainer – own @Tracked validators work normally", () => {
   it("own validator fires and populates validationMessages", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const items = new TrackedCollection<ChildModel>(tracker);
     const container = tracker.construct(() => new SingleChildContainer(tracker, items));
 
@@ -55,7 +56,7 @@ describe("TrackedContainer – own @Tracked validators work normally", () => {
   });
 
   it("own validator clears when field is set to a valid value", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const items = new TrackedCollection<ChildModel>(tracker);
     const container = tracker.construct(() => new SingleChildContainer(tracker, items));
 
@@ -66,7 +67,7 @@ describe("TrackedContainer – own @Tracked validators work normally", () => {
   });
 
   it("undoing a field change restores the validation error", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const items = new TrackedCollection<ChildModel>(tracker);
     const container = tracker.construct(() => new SingleChildContainer(tracker, items));
     container.title = "Something";
@@ -83,7 +84,7 @@ describe("TrackedContainer – own @Tracked validators work normally", () => {
 
 describe("TrackedContainer – isValid reflects TrackedObject child validity", () => {
   it("is false when a registered child object is invalid", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const child = tracker.construct(() => new ChildModel(tracker)); // name="" → invalid
     const container = tracker.construct(
       () => new SingleChildContainer(tracker, child),
@@ -97,7 +98,7 @@ describe("TrackedContainer – isValid reflects TrackedObject child validity", (
   });
 
   it("is true when the container's own fields and all children are valid", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const child = tracker.construct(() => new ChildModel(tracker));
     // MultiChildContainer has no own-field validators — starts valid
     const container = tracker.construct(
@@ -111,7 +112,7 @@ describe("TrackedContainer – isValid reflects TrackedObject child validity", (
   });
 
   it("is false when own field is invalid even if child is valid", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const child = tracker.construct(() => new ChildModel(tracker));
     const container = tracker.construct(
       () => new SingleChildContainer(tracker, child),
@@ -125,7 +126,7 @@ describe("TrackedContainer – isValid reflects TrackedObject child validity", (
   });
 
   it("becomes valid once both own field and child are valid", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const child = tracker.construct(() => new ChildModel(tracker));
     const container = tracker.construct(
       () => new SingleChildContainer(tracker, child),
@@ -142,7 +143,7 @@ describe("TrackedContainer – isValid reflects TrackedObject child validity", (
 
 describe("TrackedContainer – isValid reflects TrackedCollection child validity", () => {
   it("is false when a registered collection is invalid (fails its validator)", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const items = new TrackedCollection<string>(
       tracker,
       [],
@@ -161,7 +162,7 @@ describe("TrackedContainer – isValid reflects TrackedCollection child validity
   });
 
   it("becomes valid when the collection passes its validator", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const items = new TrackedCollection<string>(
       tracker,
       [],
@@ -183,7 +184,7 @@ describe("TrackedContainer – isValid reflects TrackedCollection child validity
 
 describe("TrackedContainer – multiple children: one invalid makes container invalid", () => {
   it("is false when the first child (TrackedObject) is invalid", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const childA = tracker.construct(() => new ChildModel(tracker)); // invalid
     const childB = tracker.construct(() => new ChildModel(tracker));
     const container = tracker.construct(
@@ -196,7 +197,7 @@ describe("TrackedContainer – multiple children: one invalid makes container in
   });
 
   it("is false when the second child (TrackedObject) is invalid", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const childA = tracker.construct(() => new ChildModel(tracker));
     const childB = tracker.construct(() => new ChildModel(tracker)); // invalid
     const container = tracker.construct(
@@ -209,7 +210,7 @@ describe("TrackedContainer – multiple children: one invalid makes container in
   });
 
   it("is true when all children and own fields are valid", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const childA = tracker.construct(() => new ChildModel(tracker));
     const childB = tracker.construct(() => new ChildModel(tracker));
     const container = tracker.construct(
@@ -224,7 +225,7 @@ describe("TrackedContainer – multiple children: one invalid makes container in
   });
 
   it("is false when a TrackedCollection child is invalid and TrackedObject child is valid", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const childA = tracker.construct(() => new ChildModel(tracker));
     const childB = new TrackedCollection<string>(
       tracker,
@@ -247,7 +248,7 @@ describe("TrackedContainer – multiple children: one invalid makes container in
 
 describe("TrackedContainer – isDirty", () => {
   it("is false when nothing has changed", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const child = tracker.construct(() => new ChildModel(tracker));
     const container = tracker.construct(
       () => new SingleChildContainer(tracker, child),
@@ -257,7 +258,7 @@ describe("TrackedContainer – isDirty", () => {
   });
 
   it("is true when an own @Tracked field changes", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const child = tracker.construct(() => new ChildModel(tracker));
     const container = tracker.construct(
       () => new SingleChildContainer(tracker, child),
@@ -269,7 +270,7 @@ describe("TrackedContainer – isDirty", () => {
   });
 
   it("is true when a registered child TrackedObject has a dirty field", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const child = tracker.construct(() => new ChildModel(tracker));
     const container = tracker.construct(
       () => new SingleChildContainer(tracker, child),
@@ -282,7 +283,7 @@ describe("TrackedContainer – isDirty", () => {
   });
 
   it("is false after undoing a child mutation", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const child = tracker.construct(() => new ChildModel(tracker));
     const container = tracker.construct(
       () => new SingleChildContainer(tracker, child),
@@ -296,7 +297,7 @@ describe("TrackedContainer – isDirty", () => {
   });
 
   it("is true from own field even when child is clean", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const child = tracker.construct(() => new ChildModel(tracker));
     const container = tracker.construct(
       () => new SingleChildContainer(tracker, child),
@@ -314,7 +315,7 @@ describe("TrackedContainer – isDirty", () => {
 
 describe("TrackedContainer – collection items are tracked automatically", () => {
   it("item already in the collection at trackChild time makes container invalid", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const item = tracker.construct(() => new ChildModel(tracker)); // name="" → invalid
     const items = new TrackedCollection<ChildModel>(tracker, [item]);
     const container = tracker.construct(
@@ -326,7 +327,7 @@ describe("TrackedContainer – collection items are tracked automatically", () =
   });
 
   it("item pre-existing in collection: container becomes valid when item becomes valid", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const item = tracker.construct(() => new ChildModel(tracker));
     const items = new TrackedCollection<ChildModel>(tracker, [item]);
     const container = tracker.construct(
@@ -340,7 +341,7 @@ describe("TrackedContainer – collection items are tracked automatically", () =
   });
 
   it("pushing an invalid item makes the container invalid", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const items = new TrackedCollection<ChildModel>(tracker);
     const container = tracker.construct(
       () => new MultiChildContainer(tracker, [items]),
@@ -354,7 +355,7 @@ describe("TrackedContainer – collection items are tracked automatically", () =
   });
 
   it("pushed item becoming valid makes the container valid again", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const items = new TrackedCollection<ChildModel>(tracker);
     const container = tracker.construct(
       () => new MultiChildContainer(tracker, [items]),
@@ -369,7 +370,7 @@ describe("TrackedContainer – collection items are tracked automatically", () =
   });
 
   it("removing an invalid item restores container validity", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const items = new TrackedCollection<ChildModel>(tracker);
     const container = tracker.construct(
       () => new MultiChildContainer(tracker, [items]),
@@ -384,7 +385,7 @@ describe("TrackedContainer – collection items are tracked automatically", () =
   });
 
   it("undoing a push removes the item from tracking", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const items = new TrackedCollection<ChildModel>(tracker);
     const container = tracker.construct(
       () => new MultiChildContainer(tracker, [items]),
@@ -399,7 +400,7 @@ describe("TrackedContainer – collection items are tracked automatically", () =
   });
 
   it("redoing a push re-adds the item to tracking", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const items = new TrackedCollection<ChildModel>(tracker);
     const container = tracker.construct(
       () => new MultiChildContainer(tracker, [items]),
@@ -415,7 +416,7 @@ describe("TrackedContainer – collection items are tracked automatically", () =
   });
 
   it("isDirty is true when a collection item has dirty fields", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const item = tracker.construct(() => new ChildModel(tracker));
     const items = new TrackedCollection<ChildModel>(tracker, [item]);
     const container = tracker.construct(
@@ -433,7 +434,7 @@ describe("TrackedContainer – collection items are tracked automatically", () =
 
 describe("TrackedContainer – untrackChild", () => {
   it("untracking a TrackedObject child stops its validity from affecting the container", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const child = tracker.construct(() => new ChildModel(tracker)); // name="" → invalid
 
     class DynamicContainer extends TrackedContainer {
@@ -453,7 +454,7 @@ describe("TrackedContainer – untrackChild", () => {
   });
 
   it("untracking a TrackedCollection stops its items from affecting the container", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const item = tracker.construct(() => new ChildModel(tracker)); // invalid
     const items = new TrackedCollection<ChildModel>(tracker, [item]);
 
@@ -474,7 +475,7 @@ describe("TrackedContainer – untrackChild", () => {
   });
 
   it("after untracking a collection, newly pushed items no longer affect the container", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const items = new TrackedCollection<ChildModel>(tracker);
 
     class DynamicContainer extends TrackedContainer {
@@ -495,7 +496,7 @@ describe("TrackedContainer – untrackChild", () => {
   });
 
   it("untracking a child that was never tracked is a no-op", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const foreign = tracker.construct(() => new ChildModel(tracker));
 
     class DynamicContainer extends TrackedContainer {

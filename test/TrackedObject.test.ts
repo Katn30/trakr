@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { TrackedObject } from "../src/TrackedObject";
 import { Tracker } from "../src/Tracker";
+import { DirtyTracker } from "../src/DirtyTracker";
 import { Tracked } from "../src/Tracked";
 import { TrackedCollection } from "../src/TrackedCollection";
 import { State } from "../src/State";
@@ -73,7 +74,7 @@ class RequiredNameModel extends TrackedObject {
 
 describe("TrackedObject – sequential changes create separate undo steps", () => {
   it("two sequential property changes create two undo steps", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const invoice = tracker.construct(() => new InvoiceModel(tracker));
 
     invoice.status = "active";
@@ -88,7 +89,7 @@ describe("TrackedObject – sequential changes create separate undo steps", () =
   });
 
   it("a property change and a collection mutation create two undo steps", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const invoice = tracker.construct(() => new InvoiceModel(tracker, "active", ["line-1"]));
     tracker.onCommit();
 
@@ -105,7 +106,7 @@ describe("TrackedObject – sequential changes create separate undo steps", () =
   });
 
   it("two sequential collection mutations create two undo steps", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const invoice = tracker.construct(() => new InvoiceModel(tracker, "", ["a", "b"]));
     tracker.onCommit();
 
@@ -125,7 +126,7 @@ describe("TrackedObject – sequential changes create separate undo steps", () =
 
 describe("TrackedObject – tracking suppression", () => {
   it("changes inside trackingSuppressed do not create undo entries", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const invoice = tracker.construct(() => new InvoiceModel(tracker));
 
     tracker.withTrackingSuppressed(() => {
@@ -137,7 +138,7 @@ describe("TrackedObject – tracking suppression", () => {
   });
 
   it("changes inside trackingSuppressed do not mark the tracker dirty", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const invoice = tracker.construct(() => new InvoiceModel(tracker));
 
     tracker.withTrackingSuppressed(() => {
@@ -148,7 +149,7 @@ describe("TrackedObject – tracking suppression", () => {
   });
 
   it("values are still applied inside trackingSuppressed", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const invoice = tracker.construct(() => new InvoiceModel(tracker));
 
     tracker.withTrackingSuppressed(() => {
@@ -161,7 +162,7 @@ describe("TrackedObject – tracking suppression", () => {
   });
 
   it("changes after trackingSuppressed are tracked normally", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const invoice = tracker.construct(() => new InvoiceModel(tracker));
 
     tracker.withTrackingSuppressed(() => {
@@ -175,7 +176,7 @@ describe("TrackedObject – tracking suppression", () => {
   });
 
   it("beginSuppressTracking / endSuppressTracking behave identically", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const invoice = tracker.construct(() => new InvoiceModel(tracker));
 
     tracker.beginSuppressTracking();
@@ -193,7 +194,7 @@ describe("TrackedObject – tracking suppression", () => {
 
 describe("TrackedObject – @Tracked on get/set accessor", () => {
   it("change is tracked and undoable", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const person = tracker.construct(() => new PersonModel(tracker, "Alice"));
     tracker.onCommit();
 
@@ -205,7 +206,7 @@ describe("TrackedObject – @Tracked on get/set accessor", () => {
   });
 
   it("undo then redo restores the change", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const person = tracker.construct(() => new PersonModel(tracker));
 
     person.name = "Bob";
@@ -216,7 +217,7 @@ describe("TrackedObject – @Tracked on get/set accessor", () => {
   });
 
   it("setting the same value does not create an undo step", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const person = tracker.construct(() => new PersonModel(tracker, "Alice"));
     tracker.onCommit();
 
@@ -227,7 +228,7 @@ describe("TrackedObject – @Tracked on get/set accessor", () => {
   });
 
   it("changes inside trackingSuppressed are not tracked", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const person = tracker.construct(() => new PersonModel(tracker));
 
     tracker.withTrackingSuppressed(() => {
@@ -256,7 +257,7 @@ class CoalesceSetterModel extends TrackedObject {
 
 describe("TrackedObject – coalesceWithin on explicit get/set pair", () => {
   it("rapid writes to the same setter merge into one undo step", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new CoalesceSetterModel(tracker));
 
     model.note = "a";
@@ -272,7 +273,7 @@ describe("TrackedObject – coalesceWithin on explicit get/set pair", () => {
 
 describe("TrackedObject – isDirtyChanged", () => {
   it("fires with true when the tracker becomes dirty", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const invoice = tracker.construct(() => new InvoiceModel(tracker));
     const calls: boolean[] = [];
     tracker.isDirtyChanged.subscribe((v) => calls.push(v));
@@ -283,7 +284,7 @@ describe("TrackedObject – isDirtyChanged", () => {
   });
 
   it("fires with false when the tracker becomes clean", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const invoice = tracker.construct(() => new InvoiceModel(tracker));
     invoice.status = "draft";
     const calls: boolean[] = [];
@@ -295,7 +296,7 @@ describe("TrackedObject – isDirtyChanged", () => {
   });
 
   it("does not fire when isDirty is already true", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const invoice = tracker.construct(() => new InvoiceModel(tracker));
     invoice.status = "draft";
     const calls: boolean[] = [];
@@ -307,7 +308,7 @@ describe("TrackedObject – isDirtyChanged", () => {
   });
 
   it("does not fire when isDirty is already false", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     tracker.construct(() => new InvoiceModel(tracker));
     const calls: boolean[] = [];
     tracker.isDirtyChanged.subscribe((v) => calls.push(v));
@@ -320,7 +321,7 @@ describe("TrackedObject – isDirtyChanged", () => {
 
 describe("TrackedObject – isValidChanged", () => {
   it("fires with false when the tracker becomes invalid", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new ValidatedModel(tracker));
     tracker.onCommit();
     const calls: boolean[] = [];
@@ -332,7 +333,7 @@ describe("TrackedObject – isValidChanged", () => {
   });
 
   it("fires with true when the tracker becomes valid again", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new ValidatedModel(tracker));
     model.status = "";
     const calls: boolean[] = [];
@@ -344,7 +345,7 @@ describe("TrackedObject – isValidChanged", () => {
   });
 
   it("does not fire when isValid is already false", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new ValidatedModel(tracker));
     model.status = "";
     const calls: boolean[] = [];
@@ -356,7 +357,7 @@ describe("TrackedObject – isValidChanged", () => {
   });
 
   it("does not fire when isValid is already true", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new ValidatedModel(tracker));
     const calls: boolean[] = [];
     tracker.isValidChanged.subscribe((v) => calls.push(v));
@@ -369,7 +370,7 @@ describe("TrackedObject – isValidChanged", () => {
 
 describe("TrackedObject – canCommitChanged", () => {
   it("fires with true when isDirty becomes true and isValid is already true", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const invoice = tracker.construct(() => new InvoiceModel(tracker));
     const calls: boolean[] = [];
     tracker.canCommitChanged.subscribe((v) => calls.push(v));
@@ -380,7 +381,7 @@ describe("TrackedObject – canCommitChanged", () => {
   });
 
   it("fires with false when isDirty becomes false", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const invoice = tracker.construct(() => new InvoiceModel(tracker));
     invoice.status = "draft";
     const calls: boolean[] = [];
@@ -392,7 +393,7 @@ describe("TrackedObject – canCommitChanged", () => {
   });
 
   it("fires with false when isValid becomes false while isDirty is true", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new ValidatedModel(tracker));
     model.status = "active";
     const calls: boolean[] = [];
@@ -404,7 +405,7 @@ describe("TrackedObject – canCommitChanged", () => {
   });
 
   it("does not fire when isDirty becomes true but isValid is false", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new ValidatedModel(tracker));
     tracker.withTrackingSuppressed(() => { model.status = ""; });
     tracker.revalidate();
@@ -417,7 +418,7 @@ describe("TrackedObject – canCommitChanged", () => {
   });
 
   it("does not fire when a second change is made while already dirty and valid", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const invoice = tracker.construct(() => new InvoiceModel(tracker));
     invoice.status = "draft";
     const calls: boolean[] = [];
@@ -433,7 +434,7 @@ describe("TrackedObject – canCommitChanged", () => {
 
 describe("TrackedObject – construct()", () => {
   it("validates all objects and updates tracker.isValid after the lambda", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     expect(tracker.isValid).toBe(true);
 
     tracker.construct(() => new RequiredNameModel(tracker));
@@ -442,7 +443,7 @@ describe("TrackedObject – construct()", () => {
   });
 
   it("suppresses tracking during construction (canUndo is false)", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
 
     tracker.construct(() => new RequiredNameModel(tracker));
 
@@ -450,7 +451,7 @@ describe("TrackedObject – construct()", () => {
   });
 
   it("returns the constructed object", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
 
     const model = tracker.construct(() => new RequiredNameModel(tracker));
 
@@ -459,13 +460,13 @@ describe("TrackedObject – construct()", () => {
   });
 
   it("throws when constructing outside construct()", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
 
     expect(() => new RequiredNameModel(tracker)).toThrow();
   });
 
   it("handles multiple objects (only one revalidation at the end)", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
 
     const models = tracker.construct(() => {
       const a = new RequiredNameModel(tracker);
@@ -480,7 +481,7 @@ describe("TrackedObject – construct()", () => {
   });
 
   it("isValid correctly reflects validity after construct() with invalid objects", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
 
     tracker.construct(() => new RequiredNameModel(tracker));
     tracker.construct(() => new RequiredNameModel(tracker));
@@ -490,7 +491,7 @@ describe("TrackedObject – construct()", () => {
   });
 
   it("model.isValid, model.validationMessages, and tracker.isValid are all set after construct() with invalid initial data", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
 
     const model = tracker.construct(() => new RequiredNameModel(tracker));
 
@@ -500,7 +501,7 @@ describe("TrackedObject – construct()", () => {
   });
 
   it("undo push of invalid constructed item removes ghost and restores tracker.isValid", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const items = new TrackedCollection<RequiredNameModel>(tracker);
     const item = tracker.construct(() => new RequiredNameModel(tracker));
     expect(tracker.isValid).toBe(false); // invalid before push (name is empty)
@@ -513,7 +514,7 @@ describe("TrackedObject – construct()", () => {
   });
 
   it("redo push of invalid item re-tracks and restores tracker.isValid to false", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const items = new TrackedCollection<RequiredNameModel>(tracker);
     const item = tracker.construct(() => new RequiredNameModel(tracker));
     items.push(item);
@@ -557,7 +558,7 @@ class CapturingModel extends TrackedObject {
 
 describe("TrackedObject — coalesceWithin option", () => {
   it("two rapid changes to the same property merge into one undo step", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new CoalesceModel(tracker));
 
     model.note = "a";
@@ -569,7 +570,7 @@ describe("TrackedObject — coalesceWithin option", () => {
   });
 
   it("a property without coalesceWithin never merges — each write is its own undo step", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const invoice = tracker.construct(() => new InvoiceModel(tracker));
 
     // InvoiceModel.status has no coalesceWithin — writes never merge
@@ -593,7 +594,7 @@ class NumModel extends TrackedObject {
 
 describe("TrackedObject — without coalesceWithin, writes never merge", () => {
   it("rapid changes to the same string property are separate undo steps", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const invoice = tracker.construct(() => new InvoiceModel(tracker));
 
     invoice.status = "a";
@@ -607,7 +608,7 @@ describe("TrackedObject — without coalesceWithin, writes never merge", () => {
   });
 
   it("rapid changes to the same number property are separate undo steps", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new NumModel(tracker));
 
     model.qty = 1;
@@ -624,7 +625,7 @@ describe("TrackedObject — without coalesceWithin, writes never merge", () => {
 
 describe("TrackedObject — Tracker._isInUndoStack()", () => {
   it("returns true for an operation that is in the undo stack", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new CapturingModel(tracker));
 
     model.value = 5;
@@ -635,7 +636,7 @@ describe("TrackedObject — Tracker._isInUndoStack()", () => {
   });
 
   it("returns false for an operation that has been moved to the redo stack via undo", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new CapturingModel(tracker));
 
     model.value = 5;
@@ -648,7 +649,7 @@ describe("TrackedObject — Tracker._isInUndoStack()", () => {
   });
 
   it("returns true again after redo puts the operation back in the undo stack", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new CapturingModel(tracker));
 
     model.value = 5;
@@ -662,7 +663,7 @@ describe("TrackedObject — Tracker._isInUndoStack()", () => {
   });
 
   it("returns false for an operation that was never added to the undo stack", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const foreign = new Operation();
     expect(tracker._isInUndoStack(foreign)).toBe(false);
   });
@@ -695,13 +696,13 @@ class NodeModel extends TrackedObject {
 
 describe("Tracker.deletedObjects", () => {
   it("is empty when no objects are deleted", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     tracker.construct(() => new DeletableModel(tracker));
     expect(tracker.deletedObjects).toHaveLength(0);
   });
 
   it("contains an object removed from a TrackedCollection", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const item = tracker.construct(() => new DeletableModel(tracker));
     tracker.withTrackingSuppressed(() => {});
     const coll = new TrackedCollection<DeletableModel>(tracker, [item]);
@@ -711,7 +712,7 @@ describe("Tracker.deletedObjects", () => {
   });
 
   it("does not contain an item that collapsed Insert → Unchanged on remove", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const items = new TrackedCollection<DeletableModel>(tracker);
     const item = tracker.construct(() => new DeletableModel(tracker));
     items.push(item);
@@ -722,7 +723,7 @@ describe("Tracker.deletedObjects", () => {
   });
 
   it("disappears from deletedObjects after undo of remove", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const item = tracker.construct(() => new DeletableModel(tracker));
     const coll = new TrackedCollection<DeletableModel>(tracker, [item]);
     coll.remove(item);
@@ -732,7 +733,7 @@ describe("Tracker.deletedObjects", () => {
   });
 
   it("reappears in deletedObjects after redo of remove", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const item = tracker.construct(() => new DeletableModel(tracker));
     const coll = new TrackedCollection<DeletableModel>(tracker, [item]);
     coll.remove(item);
@@ -743,7 +744,7 @@ describe("Tracker.deletedObjects", () => {
   });
 
   it("is empty after commit of a delete (state → Unchanged)", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const item = tracker.construct(() => new DeletableModel(tracker));
     const coll = new TrackedCollection<DeletableModel>(tracker, [item]);
     coll.remove(item);
@@ -753,7 +754,7 @@ describe("Tracker.deletedObjects", () => {
   });
 
   it("reappears after undoing a committed delete (state → Insert)", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const item = tracker.construct(() => new DeletableModel(tracker));
     const coll = new TrackedCollection<DeletableModel>(tracker, [item]);
     coll.remove(item);
@@ -766,7 +767,7 @@ describe("Tracker.deletedObjects", () => {
   });
 
   it("contains an object deleted via a @Tracked composed property set to null", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const parent = tracker.construct(() => new DeletableModel(tracker));
     const child = tracker.construct(() => new DeletableModel(tracker));
     tracker.withTrackingSuppressed(() => { parent.detail = child; });
@@ -778,7 +779,7 @@ describe("Tracker.deletedObjects", () => {
   });
 
   it("does not contain an object after destroy()", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const item = tracker.construct(() => new DeletableModel(tracker));
     const coll = new TrackedCollection<DeletableModel>(tracker, [item]);
     coll.remove(item);
@@ -792,7 +793,7 @@ describe("Tracker.deletedObjects", () => {
 
 describe("TrackedObject — @Tracked single-property composition lifecycle", () => {
   it("1. Assigned: child is tracked as Insert", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const node = tracker.construct(() => new NodeModel(tracker));
     const leaf = tracker.construct(() => new LeafModel(tracker));
 
@@ -803,7 +804,7 @@ describe("TrackedObject — @Tracked single-property composition lifecycle", () 
   });
 
   it("2. Replaced: old child is untracked (collapseInsert), new child is Insert", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const node = tracker.construct(() => new NodeModel(tracker));
     const leaf1 = tracker.construct(() => new LeafModel(tracker));
     node.leaf = leaf1;
@@ -817,7 +818,7 @@ describe("TrackedObject — @Tracked single-property composition lifecycle", () 
   });
 
   it("3. Replaced undone: old child is re-tracked as Insert, new child is untracked", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const node = tracker.construct(() => new NodeModel(tracker));
     const leaf1 = tracker.construct(() => new LeafModel(tracker));
     node.leaf = leaf1;
@@ -832,7 +833,7 @@ describe("TrackedObject — @Tracked single-property composition lifecycle", () 
   });
 
   it("4. Replaced undone then redone: old child is untracked again, new child is re-tracked as Insert", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const node = tracker.construct(() => new NodeModel(tracker));
     const leaf1 = tracker.construct(() => new LeafModel(tracker));
     node.leaf = leaf1;
@@ -848,7 +849,7 @@ describe("TrackedObject — @Tracked single-property composition lifecycle", () 
   });
 
   it("validity flows correctly through replace → undo → redo", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const node = tracker.construct(() => new NodeModel(tracker));
     const leaf1 = tracker.construct(() => new LeafModel(tracker)); // name="" → invalid
     node.leaf = leaf1;

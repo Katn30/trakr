@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { TrackedObject } from "../src/TrackedObject";
 import { Tracker } from "../src/Tracker";
+import { DirtyTracker } from "../src/DirtyTracker";
 import { Tracked } from "../src/Tracked";
 import { EventTracker } from "../src/EventTracker";
 import { EventTracked } from "../src/EventTracked";
 
+import { emitted } from "./eventHelpers";
 // ---- Models ----
 
 class SimpleModel extends TrackedObject {
@@ -28,7 +30,7 @@ class EventModel extends TrackedObject {
 
 describe("TrackedObject.beforeChange / afterChange", () => {
   it("beforeChange fires before afterChange on the same setter call", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new SimpleModel(tracker));
     const order: string[] = [];
 
@@ -41,7 +43,7 @@ describe("TrackedObject.beforeChange / afterChange", () => {
   });
 
   it("beforeChange and afterChange both fire once per setter call", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new SimpleModel(tracker));
 
     let beforeCount = 0;
@@ -57,7 +59,7 @@ describe("TrackedObject.beforeChange / afterChange", () => {
   });
 
   it("carries the same event payload as changed", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new SimpleModel(tracker));
     const beforeEvents: unknown[] = [];
     const afterEvents: unknown[] = [];
@@ -73,7 +75,7 @@ describe("TrackedObject.beforeChange / afterChange", () => {
   });
 
   it("both fire during undo and redo", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new SimpleModel(tracker));
 
     model.value = "a";
@@ -94,13 +96,13 @@ describe("TrackedObject.beforeChange / afterChange", () => {
 
 describe("TrackedObject.changed alias", () => {
   it("is the same TypedEvent instance as afterChange", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new SimpleModel(tracker));
     expect(model.changed).toBe(model.afterChange);
   });
 
   it("subscribers still fire on writes (post-commit position)", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new SimpleModel(tracker));
     const values: string[] = [];
 
@@ -114,13 +116,13 @@ describe("TrackedObject.changed alias", () => {
 // ---- Event-state commit ordering ----
 
 describe("event state visibility relative to hooks", () => {
-  it("beforeChange subscriber does NOT see the change in generateEvents()", () => {
+  it("beforeChange subscriber does not see the change in pendingEvents", () => {
     const tracker = new EventTracker();
     const model = tracker.construct(() => new EventModel(tracker));
 
     let observed: unknown[] | undefined;
     model.beforeChange.subscribe(() => {
-      observed = tracker.generateEvents();
+      observed = emitted(tracker);
     });
 
     model.name = "alice";
@@ -131,34 +133,38 @@ describe("event state visibility relative to hooks", () => {
     expect(observed!.some((e: any) => e.eventType === "NameChanged")).toBe(false);
   });
 
-  it("afterChange subscriber DOES see the change in generateEvents()", () => {
+  it("afterChange fires before the operation's event is recorded", () => {
     const tracker = new EventTracker();
     const model = tracker.construct(() => new EventModel(tracker));
 
     let observed: unknown[] | undefined;
     model.afterChange.subscribe(() => {
-      observed = tracker.generateEvents();
+      observed = emitted(tracker);
     });
 
     model.name = "alice";
 
-    expect(observed).toBeDefined();
-    expect(observed!.some((e: any) => e.eventType === "NameChanged")).toBe(true);
+    expect(observed).toEqual([]);
   });
 
-  it("target.changed subscriber DOES see the change in generateEvents() (alias for afterChange)", () => {
+  it("tracker.eventsChanged fires once the event is recorded — the hook for autosave", () => {
     const tracker = new EventTracker();
     const model = tracker.construct(() => new EventModel(tracker));
 
     let observed: unknown[] | undefined;
-    model.changed.subscribe(() => {
-      observed = tracker.generateEvents();
+    tracker.eventsChanged.subscribe(() => {
+      observed = emitted(tracker);
     });
 
     model.name = "alice";
 
-    expect(observed).toBeDefined();
     expect(observed!.some((e: any) => e.eventType === "NameChanged")).toBe(true);
+  });
+
+  it("target.changed is an alias for afterChange", () => {
+    const tracker = new EventTracker();
+    const model = tracker.construct(() => new EventModel(tracker));
+    expect(model.changed).toBe(model.afterChange);
   });
 });
 
@@ -174,7 +180,7 @@ describe("@Tracked hooks object form", () => {
         undefined,
         {
           beforeChange: () => {
-            observed.push(tracker.generateEvents());
+            observed.push(emitted(tracker));
           },
         },
         { eventType: "NameChanged" },
@@ -190,7 +196,7 @@ describe("@Tracked hooks object form", () => {
     expect(observed[0].some((e: any) => e.eventType === "NameChanged")).toBe(false);
   });
 
-  it("calls hooks.afterChange at the post-commit point", () => {
+  it("calls hooks.afterChange during the write, before the operation's events are recorded", () => {
     const tracker = new EventTracker();
     const observed: unknown[][] = [];
 
@@ -199,7 +205,7 @@ describe("@Tracked hooks object form", () => {
         undefined,
         {
           afterChange: () => {
-            observed.push(tracker.generateEvents());
+            observed.push(emitted(tracker));
           },
         },
         { eventType: "NameChanged" },
@@ -212,11 +218,12 @@ describe("@Tracked hooks object form", () => {
     m.name = "alice";
 
     expect(observed.length).toBe(1);
-    expect(observed[0].some((e: any) => e.eventType === "NameChanged")).toBe(true);
+    expect(observed[0].some((e: any) => e.eventType === "NameChanged")).toBe(false);
+    expect(emitted(tracker).some((e) => e.eventType === "NameChanged")).toBe(true);
   });
 
   it("both hooks fire in the correct order", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const order: string[] = [];
 
     class M extends TrackedObject {
@@ -235,7 +242,7 @@ describe("@Tracked hooks object form", () => {
   });
 
   it("hooks do NOT fire during undo/redo", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     let beforeCalls = 0;
     let afterCalls = 0;
 
@@ -280,7 +287,7 @@ describe("@Tracked legacy onChange function form", () => {
         undefined,
         // Bare function — legacy form, mapped to beforeChange.
         () => {
-          observed.push(tracker.generateEvents());
+          observed.push(emitted(tracker));
         },
         { eventType: "NameChanged" },
       )
@@ -292,7 +299,7 @@ describe("@Tracked legacy onChange function form", () => {
     m.name = "alice";
 
     expect(observed.length).toBe(1);
-    // Legacy = pre-commit → change not yet in generateEvents()
+    // Legacy = beforeChange → change not yet in pendingEvents
     expect(observed[0].some((e: any) => e.eventType === "NameChanged")).toBe(false);
   });
 });
@@ -301,7 +308,7 @@ describe("@Tracked legacy onChange function form", () => {
 
 describe("accessors without hooks", () => {
   it("still fire beforeChange and afterChange events", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new SimpleModel(tracker));
     const before: string[] = [];
     const after: string[] = [];

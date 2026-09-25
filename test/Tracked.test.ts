@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { TrackedObject } from "../src/TrackedObject";
 import { Tracker } from "../src/Tracker";
+import { DirtyTracker } from "../src/DirtyTracker";
 import { Tracked } from "../src/Tracked";
 
 // ---- Concrete test models ----
@@ -87,7 +88,7 @@ describe("Tracked", () => {
   let person: PersonModel;
 
   beforeEach(() => {
-    tracker = new Tracker();
+    tracker = new DirtyTracker();
     person = tracker.construct(() => new PersonModel(tracker));
   });
 
@@ -202,25 +203,25 @@ describe("Tracked", () => {
 
   describe("suppress logic during construction", () => {
     it("does not add undo entries for property assignments in the constructor body", () => {
-      const t = new Tracker();
+      const t = new DirtyTracker();
       t.construct(() => new ModelWithConstructorInit(t));
       expect(t.canUndo).toBe(false);
     });
 
     it("tracker is not dirty after construction even when constructor sets properties", () => {
-      const t = new Tracker();
+      const t = new DirtyTracker();
       t.construct(() => new ModelWithConstructorInit(t));
       expect(t.isDirty).toBe(false);
     });
 
     it("model value set in constructor body is preserved", () => {
-      const t = new Tracker();
+      const t = new DirtyTracker();
       const m = t.construct(() => new ModelWithConstructorInit(t));
       expect(m.value).toBe("initial");
     });
 
     it("property changes after construction are tracked normally", () => {
-      const t = new Tracker();
+      const t = new DirtyTracker();
       const m = t.construct(() => new ModelWithConstructorInit(t));
       m.value = "changed";
       expect(t.canUndo).toBe(true);
@@ -252,7 +253,7 @@ describe("Tracked", () => {
 
   describe("multiple models on one tracker", () => {
     it("tracker isValid is false if any model is invalid", () => {
-      const t = new Tracker();
+      const t = new DirtyTracker();
       const m1 = t.construct(() => new StrictModel(t));
       t.construct(() => new StrictModel(t));
       m1.field = "ok";
@@ -260,7 +261,7 @@ describe("Tracked", () => {
     });
 
     it("tracker isValid is true only when all models are valid", () => {
-      const t = new Tracker();
+      const t = new DirtyTracker();
       const m1 = t.construct(() => new StrictModel(t));
       const m2 = t.construct(() => new StrictModel(t));
       m1.field = "ok";
@@ -269,7 +270,7 @@ describe("Tracked", () => {
     });
 
     it("destroying one model removes it from tracker validity check", () => {
-      const t = new Tracker();
+      const t = new DirtyTracker();
       const m1 = t.construct(() => new StrictModel(t));
       const m2 = t.construct(() => new StrictModel(t));
       m1.field = "ok";
@@ -281,7 +282,7 @@ describe("Tracked", () => {
 
   describe("Date property type", () => {
     it("tracks a Date property change and marks dirty", () => {
-      const t = new Tracker();
+      const t = new DirtyTracker();
       const event = t.construct(() => new EventModel(t));
       t.onCommit();
 
@@ -291,7 +292,7 @@ describe("Tracked", () => {
     });
 
     it("undoes a Date property change", () => {
-      const t = new Tracker();
+      const t = new DirtyTracker();
       const event = t.construct(() => new EventModel(t));
       const original = event.startDate;
       t.onCommit();
@@ -306,7 +307,7 @@ describe("Tracked", () => {
 
   describe("Object property type", () => {
     it("tracks an object property change and marks dirty", () => {
-      const t = new Tracker();
+      const t = new DirtyTracker();
       const cfg = t.construct(() => new ConfigModel(t));
       t.onCommit();
 
@@ -316,7 +317,7 @@ describe("Tracked", () => {
     });
 
     it("undoes an object property change", () => {
-      const t = new Tracker();
+      const t = new DirtyTracker();
       const cfg = t.construct(() => new ConfigModel(t));
       const original = cfg.config;
       t.onCommit();
@@ -331,7 +332,7 @@ describe("Tracked", () => {
 
   describe("strict equality — null/undefined are distinct from empty string", () => {
     it("setting null property to empty string creates an operation", () => {
-      const t = new Tracker();
+      const t = new DirtyTracker();
       const m = t.construct(() => new NullableModel(t));
       m.label = "";
 
@@ -339,7 +340,7 @@ describe("Tracked", () => {
     });
 
     it("setting null property to empty string marks dirty", () => {
-      const t = new Tracker();
+      const t = new DirtyTracker();
       const m = t.construct(() => new NullableModel(t));
       t.onCommit();
 
@@ -409,13 +410,13 @@ class BudgetModel extends TrackedObject {
 describe("@Tracked on getter — dependency tracking", () => {
   describe("getter + setter pair with cascade side effects", () => {
     it("validators for dependent properties run after construction", () => {
-      const tracker = new Tracker();
+      const tracker = new DirtyTracker();
       const rule = tracker.construct(() => new RuleModel(tracker));
       expect(rule.trakrIsValid).toBe(true);
     });
 
     it("setting isEnabled=true triggers revalidation of scheduleDays", () => {
-      const tracker = new Tracker();
+      const tracker = new DirtyTracker();
       const rule = tracker.construct(() => new RuleModel(tracker));
 
       rule.isEnabled = true;
@@ -424,7 +425,7 @@ describe("@Tracked on getter — dependency tracking", () => {
     });
 
     it("setting isEnabled=false clears validation errors on dependent properties", () => {
-      const tracker = new Tracker();
+      const tracker = new DirtyTracker();
       const rule = tracker.construct(() => new RuleModel(tracker));
 
       rule.isEnabled = true;
@@ -435,7 +436,7 @@ describe("@Tracked on getter — dependency tracking", () => {
     });
 
     it("dependent validators re-run without manual revalidate()", () => {
-      const tracker = new Tracker();
+      const tracker = new DirtyTracker();
       const rule = tracker.construct(() => new RuleModel(tracker));
 
       rule.isEnabled = true;
@@ -447,7 +448,7 @@ describe("@Tracked on getter — dependency tracking", () => {
     });
 
     it("undo of isEnabled restores dependent validation state", () => {
-      const tracker = new Tracker();
+      const tracker = new DirtyTracker();
       const rule = tracker.construct(() => new RuleModel(tracker));
 
       rule.isEnabled = true;
@@ -459,7 +460,7 @@ describe("@Tracked on getter — dependency tracking", () => {
     });
 
     it("getter-decorated property does not create an undo step on read", () => {
-      const tracker = new Tracker();
+      const tracker = new DirtyTracker();
       const rule = tracker.construct(() => new RuleModel(tracker));
 
       const _ = rule.isEnabled;
@@ -469,7 +470,7 @@ describe("@Tracked on getter — dependency tracking", () => {
 
   describe("purely computed getter", () => {
     it("validator that reads a computed getter reruns when a source property changes", () => {
-      const tracker = new Tracker();
+      const tracker = new DirtyTracker();
       const budget = tracker.construct(() => new BudgetModel(tracker));
 
       budget.price = 200;
@@ -480,7 +481,7 @@ describe("@Tracked on getter — dependency tracking", () => {
     });
 
     it("validator clears when total drops below threshold", () => {
-      const tracker = new Tracker();
+      const tracker = new DirtyTracker();
       const budget = tracker.construct(() => new BudgetModel(tracker));
 
       budget.price = 200;

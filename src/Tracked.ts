@@ -104,7 +104,6 @@ export function Tracked(
             this,
             propertyName,
             getPropertyType(newValue, oldValue),
-            validator ? (model: any, v: any) => validator(model, v) : undefined,
             options?.coalesceWithin,
           );
 
@@ -113,7 +112,7 @@ export function Tracked(
               accessorTarget.set.call(this, newValue);
               const tracked = this as unknown as ITracked;
               tracked.dirtyCounter++;
-              if (tracked.trakrState === State.Unchanged) tracked._setState(State.Changed);
+              if (this.tracker._tracksObjectState && tracked.trakrState === State.Unchanged) tracked._setState(State.Changed);
               if (oldValue instanceof TrackedObject) oldValue._markRemoved();
               if (newValue instanceof TrackedObject) newValue._markAdded();
               const event = { property: propertyName, oldValue, newValue };
@@ -171,7 +170,6 @@ export function Tracked(
           this,
           propertyName,
           getPropertyType(newValue, oldValue),
-          validator ? (model: any, v: any) => validator(model, v) : undefined,
           options?.coalesceWithin,
         );
 
@@ -180,7 +178,7 @@ export function Tracked(
             setterFn.call(this, newValue);
             const tracked = this as unknown as ITracked;
             tracked.dirtyCounter++;
-            if (tracked.trakrState === State.Unchanged) tracked._setState(State.Changed);
+            if (this.tracker._tracksObjectState && tracked.trakrState === State.Unchanged) tracked._setState(State.Changed);
             if (oldValue instanceof TrackedObject) oldValue._markRemoved();
             if (newValue instanceof TrackedObject) newValue._markAdded();
             const event = { property: propertyName, oldValue, newValue };

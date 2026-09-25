@@ -26,6 +26,7 @@ npm install @katn30/trakr
 
 ```typescript
 import {
+  DirtyTracker,
   Tracker,
   TrackedObject,
   TrackedCollection,
@@ -33,7 +34,7 @@ import {
   AutoId,
 } from '@katn30/trakr';
 
-const tracker = new Tracker();
+const tracker = new DirtyTracker();
 
 class InvoiceModel extends TrackedObject {
   @AutoId
@@ -71,6 +72,26 @@ tracker.undo();    // reverts push — state back to Unchanged
 
 tracker.isDirty;   // false
 ```
+
+---
+
+## Choosing a tracker
+
+`Tracker` is an abstract base: it owns change events, validation, sessions and the undo/redo stack. You instantiate one of its two subclasses, which differ in what "saving" means:
+
+| | `DirtyTracker` | `EventTracker` |
+|---|---|---|
+| Workflow | Explicit **Save** button, one atomic request | **Autosave**, every change streamed to an event-sourced backend |
+| Source of truth | Object state: `Insert` / `Changed` / `Deleted` / `Unchanged` | The event list: every operation's events, each `NotCommitted`, `Committed` or `Undone` |
+| Save payload | Walk `trackedObjects` / `deletedObjects` by `trakrState` | `pendingEvents`: one event per operation, from the event list |
+| Acknowledge | `onCommit(keys?)` — everything becomes `Unchanged` at once | `onCommit(events, keys?)` — only those events become `Committed` |
+| `isDirty` | Undo stack differs from the last commit | At least one `NotCommitted` event exists |
+| Undo after a save | Object becomes dirty again (e.g. committed insert → `Deleted`) | The event stays `Committed`; a compensating event is added |
+| `trakrState` | Meaningful | Always `Unchanged` |
+
+Both share everything else: `@Tracked`, `TrackedObject`, `TrackedCollection`, `TrackedContainer`, validation, sessions, `construct()` / `new()`, coalescing, and `version`.
+
+Type your models against the base class (`constructor(tracker: Tracker)`) so they work with either.
 
 ---
 
@@ -154,8 +175,8 @@ tracker.undo(); // reverts tag AND removes 'active' from tags — one step
 
 When side-effect logic needs to be kept separate from the setter body — or when using `accessor` fields where there is no setter body — pass a `{ beforeChange, afterChange }` hooks object as the second argument to `@Tracked()`. Each hook receives `(self, newValue, oldValue)` and runs inside the tracked operation, so any `@Tracked` property writes or `TrackedCollection` mutations made inside them are automatically composed into the same undo step. Hooks do not fire during undo or redo — the stored actions handle replay.
 
-- **`beforeChange`** — fires *before* the change is committed to internal event state. Use this only for cascading mutations that must be recorded as part of the same operation as the trigger. Calling `tracker.generateEvents()` from `beforeChange` will not see the triggering change.
-- **`afterChange`** — fires *after* the change is committed. Use this for auto-save, telemetry, network sync, or any observer that needs `tracker.generateEvents()` to include the triggering change.
+- **`beforeChange`**: fires *before* the new value is recorded in internal event state. Use this only for cascading mutations that must be recorded as part of the same operation as the trigger.
+- **`afterChange`**: fires *after* it. Use this for observers of the value itself: telemetry, derived state, re-render triggers. On an `EventTracker`, the operation's events are recorded when the operation ends, after both hooks; for autosave, subscribe to `tracker.eventsChanged`.
 
 ```typescript
 class TagModel extends TrackedObject {
@@ -421,12 +442,12 @@ tracker.construct(() => {
 
 **`tracker.new()` — creating new objects**
 
-Defaults set in the constructor fire `changed` events and appear in `EventTracker.generateEvents()` on the next save. Constructor writes are not added to the undo stack, so the tracker is clean immediately after it returns.
+Defaults set in the constructor fire `changed` events. On an `EventTracker` they are recorded as one event, outside the undo stack. Constructor writes are not added to the undo stack (`canUndo === false` afterwards). On a `DirtyTracker` the tracker is clean immediately after `new()` returns. On an `EventTracker` the defaults are an unsent event, so `isDirty` is `true` until it is committed.
 
 ```typescript
 const invoice = tracker.new(() => new InvoiceModel(tracker));
-// tracker.isDirty === false
-// defaults appear in generateEvents()
+// DirtyTracker: isDirty === false
+// EventTracker: isDirty === true — the defaults are a pending event
 ```
 
 Both methods validate every constructed object once and run `tracker.revalidate()` exactly once at the end. The same constructor can serve both roles by branching on whether saved data was provided:
@@ -441,7 +462,7 @@ class InvoiceModel extends TrackedObject {
     if (data) {
       this.status = data.status; // suppressed when called via tracker.construct()
     } else {
-      this.status = 'draft';     // fires changed, appears in generateEvents()
+      this.status = 'draft';     // fires changed; recorded as the creation event
     }
   }
 }
@@ -449,7 +470,7 @@ class InvoiceModel extends TrackedObject {
 // Loading from DB — defaults suppressed, tracker stays clean
 const saved = tracker.construct(() => new InvoiceModel(tracker, { status: 'sent' }));
 
-// User creates new — defaults tracked, appear in generateEvents()
+// User creates new — defaults tracked, recorded as an event
 const fresh = tracker.new(() => new InvoiceModel(tracker));
 ```
 
@@ -470,6 +491,8 @@ This catches accidental bare `new MyModel(tracker)` calls at the earliest possib
 **Build selection is automatic.** Bundlers that support the `exports` field in `package.json` — Vite, webpack 5+, and others — pick the development build when building in development mode and the production build when building for production. Nothing extra is required from consumers; the correct build is selected via the `development` export condition in trakr's `package.json`.
 
 ### Default state: Unchanged
+
+> This section and the next three — object state, the Insert/Delete lifecycle, and the save pattern — describe `DirtyTracker`. On an `EventTracker` objects stay `Unchanged`; pending work is expressed as events instead (see [Event generation](#event-generation-opt-in)).
 
 `TrackedObject` defaults to `Unchanged` at construction time. This matches the most common scenario — objects are loaded from the database and are already persisted.
 
@@ -605,12 +628,14 @@ If the server returns an error, simply surface the error to the user and leave t
 
 ## API Reference
 
-### `Tracker`
+### `Tracker` / `DirtyTracker`
 
-The central coordinator. Create one per page or form context and pass it to every model and collection.
+`Tracker` is the abstract base class shared by `DirtyTracker` and `EventTracker`; it cannot be instantiated (`new Tracker()` throws). Everything in this section is available on both, except `deletedObjects` and the commit lifecycle, which are `DirtyTracker`'s. For `EventTracker` see [`EventTracker`](#eventtracker).
+
+Create one tracker per page or form context and pass it to every model and collection.
 
 ```typescript
-const tracker = new Tracker();
+const tracker = new DirtyTracker();
 ```
 
 **State properties**
@@ -628,7 +653,7 @@ const tracker = new Tracker();
 | `version` | `number` | Monotonically changing counter — starts at `0`, increments on every new operation, decrements on undo, increments on redo. Auto-coalesced writes do not increment `version` (no new undo step is created) but still emit `versionChanged` |
 | `versionChanged` | `TypedEvent<number>` | Fires on every tracked write, undo, and redo — including auto-coalesced writes where `version` does not change. Use this as the notification signal for external subscribers such as React's `useSyncExternalStore` |
 | `trackedObjects` | `TrackedObject[]` | All registered models. Read-only — iterate for save payloads; do not mutate directly |
-| `deletedObjects` | `TrackedObject[]` | Subset of `trackedObjects` where `state === Deleted`. Use this to build delete requests — deleted objects are removed from collections and composed properties, making them unreachable from the model tree |
+| `deletedObjects` | `TrackedObject[]` | **`DirtyTracker` only.** Subset of `trackedObjects` where `state === Deleted`. Use this to build delete requests — deleted objects are removed from collections and composed properties, making them unreachable from the model tree |
 | `trackedCollections` | `TrackedCollection<any>[]` | All registered collections. Read-only — do not mutate directly |
 
 **Undo / redo**
@@ -640,7 +665,7 @@ tracker.redo();  // re-applies the last undone step
 
 Calling `undo()` or `redo()` when the respective flag is `false` is a no-op.
 
-**Commit lifecycle**
+**Commit lifecycle (`DirtyTracker`)**
 
 ```typescript
 tracker.onCommit();           // mark current state as committed — isDirty → false
@@ -651,7 +676,7 @@ tracker.onCommit(keys);       // same, plus write real server IDs to @AutoId fie
 
 1. Iterates every entry in `keys`. For each entry it finds a tracked object whose `trakrId` matches `entry.trackingId` and writes `entry.value` to its `@AutoId` field. This applies to both `Insert` items (new rows) and `Changed` items (e.g. temporal tables where an update produces a new row with a new PK).
 2. Transitions every tracked object's `trakrState` to `Unchanged` and resets `dirtyCounter`.
-3. Appends the state change into the existing last undo operation — so undo atomically reverts both the user's edits and the committed state together (no spurious extra undo steps).
+3. For each object whose state was `Insert`, `Changed`, or `Deleted` at commit time, appends the state transition to the most recent undo operation that actually touched that object — so undoing *that specific* operation atomically reverses both the user's edit and the committed state together (no spurious extra undo steps), while undoing an unrelated later operation leaves committed objects alone.
 
 **Lookup by trakrId**
 
@@ -695,11 +720,11 @@ tracker.construct(() => {
   new ModelB(tracker, rowB);
 });
 
-// Create a new object — tracking active, defaults appear in generateEvents()
+// Create a new object — tracking active; on an EventTracker the defaults become an event
 const fresh = tracker.new(() => new MyModel(tracker));
 ```
 
-`tracker.construct()` suppresses tracking entirely. `tracker.new()` lets `changed` events fire during construction — so defaults appear in `generateEvents()` — but discards the undo entries and resets the object to `Unchanged`, leaving the tracker clean. The `Unchanged` guarantee means you can immediately push the returned object into an `EventTrackedCollection` and it will correctly transition to `Insert`. Both run validators once after all objects are created and call `tracker.revalidate()` exactly once at the end.
+`tracker.construct()` suppresses tracking entirely. `tracker.new()` lets `changed` events fire during construction (on an `EventTracker` the defaults are recorded as one event), but discards the undo entries and resets the object to `Unchanged`. A `DirtyTracker` is left clean; an `EventTracker` is dirty with the defaults as pending events. The `Unchanged` guarantee means you can immediately push the returned object into a collection: on a `DirtyTracker` it transitions to `Insert`; on an `EventTracker` it is reported as added. Both run validators once after all objects are created and call `tracker.revalidate()` exactly once at the end.
 
 **Tracking suppression**
 
@@ -776,8 +801,8 @@ const invoice = tracker.construct(() => new InvoiceModel(tracker));
 | `dirtyCounter` | `number` | Net count of uncommitted property writes. Increments on each write, decrements on undo. Reset to `0` by `onCommit()`. Can be negative after undoing past a committed save |
 | `trakrIsValid` | `boolean` | `true` when all `@Tracked()` validators pass |
 | `validationMessages` | `Map<string, string>` | Maps property name → error message for each failing validator |
-| `beforeChange` | `TypedEvent<TrackedPropertyChanged>` | Fires on every property change, *before* internal event state is committed. Subscribers do not see the triggering change in `tracker.generateEvents()`. Also fires during undo and redo |
-| `afterChange` | `TypedEvent<TrackedPropertyChanged>` | Fires on every property change, *after* internal event state is committed. Subscribers see the triggering change in `tracker.generateEvents()`. Also fires during undo and redo |
+| `beforeChange` | `TypedEvent<TrackedPropertyChanged>` | Fires on every property change, *before* the new value is recorded in internal event state. Also fires during undo and redo |
+| `afterChange` | `TypedEvent<TrackedPropertyChanged>` | Fires on every property change, *after* it. Also fires during undo and redo. On an `EventTracker`, the resulting event is recorded when the operation ends; use `tracker.eventsChanged` to observe it |
 | `changed` | `TypedEvent<TrackedPropertyChanged>` | Alias for `afterChange` (same `TypedEvent` instance). Retained for backwards compatibility |
 | `trackedChanged` | `TypedEvent<TrackedPropertyChanged>` | Fires only on direct user-initiated writes — never during undo or redo |
 | `destroy()` | `void` | Removes this model from the tracker |
@@ -800,8 +825,8 @@ import type { TrackedPropertyChanged } from '@katn30/trakr';
 All events fire synchronously **inside** the tracked operation, so any `@Tracked` property write made inside a listener is automatically composed into the same undo step as the triggering write (see [Automatic composing](#automatic-composing)).
 
 The differences:
-- `beforeChange` fires *before* internal event state is updated. Reads to `tracker.generateEvents()` from a `beforeChange` subscriber do **not** include the triggering change. Use this only when you need to cascade mutations that should belong to the same logical operation as the trigger.
-- `afterChange` (alias: `changed`) fires *after* internal event state is updated. Reads to `tracker.generateEvents()` from an `afterChange` subscriber **do** include the triggering change. This is the right hook for auto-save, telemetry, network sync, and downstream re-render triggers.
+- `beforeChange` fires *before* internal event state is updated. Use this only when you need to cascade mutations that should belong to the same logical operation as the trigger.
+- `afterChange` (alias: `changed`) fires *after* it: the right hook for telemetry and re-render triggers. For auto-save on an `EventTracker`, use `tracker.eventsChanged`, which fires once the operation's events are recorded.
 - Both `beforeChange` and `afterChange` fire on every write, including during undo and redo replays.
 - `trackedChanged` fires only on direct user-initiated writes — never during undo or redo.
 
@@ -864,7 +889,7 @@ Iterate `tracker.trackedObjects`, read `trakrState` and the appropriate ID on ea
 > Deleted objects are no longer reachable through your model graph — a `TrackedCollection` removes them from its array, and a `@Tracked` property set to `null` (or replaced with another object) removes the reference. The tracker holds every registered object regardless of its state, so iterating `trackedObjects` is the only way to reach objects that need a DELETE request. `tracker.deletedObjects` is a convenience getter for the deleted subset only, but both approaches work.
 
 ```typescript
-import { Tracker, TrackedObject, State, Tracked, AutoId, TrackedCollection } from '@katn30/trakr';
+import { DirtyTracker, Tracker, TrackedObject, State, Tracked, AutoId, TrackedCollection } from '@katn30/trakr';
 
 class InvoiceModel extends TrackedObject {
   @AutoId
@@ -882,7 +907,7 @@ class InvoiceModel extends TrackedObject {
   }
 }
 
-const tracker = new Tracker();
+const tracker = new DirtyTracker();
 
 // Load existing rows from the server
 tracker.construct(() => {
@@ -1206,7 +1231,7 @@ invoice.status = 'draft'; // no-op
 | `hooks` | `{ beforeChange?, afterChange? }` | accessor, setter | Side-effect callbacks. Both receive `(self, newValue, oldValue)` and run inside the tracked operation — writes to other `@Tracked` properties or `TrackedCollection`s are composed into the same undo step. Neither fires during undo or redo. Passing a bare function is accepted for backwards compatibility — it maps to `beforeChange` and emits a runtime deprecation warning |
 | `options.coalesceWithin` | `number` | accessor, setter | Maximum gap in ms between two consecutive writes to merge into one undo step. Omit to never coalesce |
 
-Choose `beforeChange` when you need cascading mutations recorded as part of the same operation. Choose `afterChange` when your side-effect needs to observe the change through `tracker.generateEvents()` (auto-save, telemetry, network sync, re-render triggers).
+Choose `beforeChange` when you need cascading mutations recorded as part of the same operation. Choose `afterChange` for side-effects that observe the new value (telemetry, re-render triggers). For auto-save on an `EventTracker`, subscribe to `tracker.eventsChanged` instead.
 
 ```typescript
 // validator only:
@@ -1373,6 +1398,7 @@ import {
   TrackedContainer,
   TrackedObject,
   Tracked,
+  DirtyTracker,
   Tracker,
 } from '@katn30/trakr';
 
@@ -1393,7 +1419,7 @@ class ActionsSection extends TrackedContainer {
   }
 }
 
-const tracker = new Tracker();
+const tracker = new DirtyTracker();
 const sub = tracker.construct(() => new SubtaskDraft(tracker));      // name='' → invalid
 const section = tracker.construct(() => new ActionsSection(tracker, sub));
 
@@ -1429,7 +1455,7 @@ class ActionsSection extends TrackedContainer {
   }
 }
 
-const tracker  = new Tracker();
+const tracker  = new DirtyTracker();
 const subtasks = new TrackedCollection<SubtaskDraft>(tracker);
 const section  = tracker.construct(() => new ActionsSection(tracker, subtasks));
 
@@ -1605,7 +1631,7 @@ After save:    obj.id = 99   (correct, open row), trakrState = Unchanged
 ### Full example
 
 ```typescript
-import { Tracker, TrackedObject, TrackedCollection, State, Tracked, AutoId } from '@katn30/trakr';
+import { DirtyTracker, Tracker, TrackedObject, TrackedCollection, State, Tracked, AutoId } from '@katn30/trakr';
 
 class RuleModel extends TrackedObject {
   @AutoId
@@ -1619,7 +1645,7 @@ class RuleModel extends TrackedObject {
   }
 }
 
-const tracker = new Tracker();
+const tracker = new DirtyTracker();
 
 // Load existing rows from the server
 const rule = tracker.construct(() => new RuleModel(tracker));
@@ -1687,9 +1713,14 @@ For `Deleted` items the PK never changes — the backend just closes the existin
 
 ## Event generation (opt-in)
 
-trakr's core is a **state diff** — after edits, iterate `tracker.trackedObjects`, group by `state`, and ship a bulk payload. That model works for most backends, but consumers moving to **event-sourced DDD** need something different: on Save, produce a **list of typed events**, one per meaningful change, that the backend appends to an event stream.
+`DirtyTracker` is a **state diff**: after edits, iterate `tracker.trackedObjects`, group by `state`, and ship one bulk payload. Consumers on **event-sourced** backends need something different: a **list of typed events**, one per thing the user did, that the backend appends to its stream. Often they send them as they happen (autosave) rather than on an explicit Save.
 
-`EventTracker`, `@EventTracked`, and `EventTrackedCollection` provide a **fully opt-in** layer on top of the base API that turns dirty state into a typed event list on demand. Everything else stays identical — consumers using `Tracker` / `TrackedObject` / `TrackedCollection` / `@Tracked` see zero behavioural change.
+`EventTracker`, `@EventTracked` and `EventTrackedCollection` provide that. `EventTracker` keeps an **event list**, the event-side counterpart of the undo stack:
+
+- **Every operation** (one undo step) records the events it produced in `tracker.events`.
+- **Each event has an `eventId` and a `state`:** `NotCommitted`, `Committed` or `Undone`.
+- **You send the `NotCommitted` ones** (`tracker.pendingEvents`) and pass their `eventId`s to `onCommit`.
+- **Undo and redo change event states.** They never rewrite committed history.
 
 ### API at a glance
 
@@ -1698,31 +1729,27 @@ import {
   EventTracker,
   EventTracked,
   EventTrackedCollection,
+  EventState,
   TrackedObject,
   AutoId,
   Tracker,
-  GeneratedEvent,
+  TrackedEvent,
 } from '@katn30/trakr';
 
 enum IssueEvents {
   SubmittedDetailsRevised = 'SubmittedDetailsRevised',
-  AnalysisRevised = 'AnalysisRevised',
   StageTransitioned = 'StageTransitioned',
   CommentAdded = 'CommentAdded',
   CommentRemoved = 'CommentRemoved',
   CommentEdited = 'CommentEdited',
-  CommentStatusChanged = 'CommentStatusChanged',
 }
 
 class CommentModel extends TrackedObject {
   @AutoId
   id: number = 0;
 
-  @EventTracked(IssueEvents.CommentEdited)
+  @EventTracked(undefined, undefined, { eventType: IssueEvents.CommentEdited })
   accessor text: string = '';
-
-  @EventTracked(IssueEvents.CommentStatusChanged)
-  accessor status: string = 'open';
 
   constructor(t: Tracker) { super(t); }
 }
@@ -1731,61 +1758,110 @@ class IssueModel extends TrackedObject {
   @AutoId
   id: number = 0;
 
-  @EventTracked(IssueEvents.SubmittedDetailsRevised)
+  @EventTracked(undefined, undefined, { eventType: IssueEvents.SubmittedDetailsRevised, coalesceWithin: 1000 })
   accessor name: string = '';
 
-  @EventTracked(IssueEvents.SubmittedDetailsRevised)
-  accessor description: string = '';
-
-  @EventTracked(IssueEvents.AnalysisRevised)
-  accessor analysisSummary: string | null = null;
-
-  @EventTracked(IssueEvents.AnalysisRevised)
-  accessor rootCause: string | null = null;
-
-  // Declared LAST — see "Ordering" below.
-  @EventTracked(IssueEvents.StageTransitioned)
+  @EventTracked(undefined, undefined, { eventType: IssueEvents.StageTransitioned })
   accessor stage: string = 'Submitted';
 
   readonly comments: EventTrackedCollection<CommentModel>;
 
   constructor(t: Tracker) {
     super(t);
-    this.comments = new EventTrackedCollection<CommentModel>(
-      t,
-      [],
-      undefined,
-      {
-        itemAdded: IssueEvents.CommentAdded,
-        itemRemoved: IssueEvents.CommentRemoved,
-      },
-    );
+    this.comments = new EventTrackedCollection<CommentModel>(t, [], undefined, {
+      itemAdded: IssueEvents.CommentAdded,
+      itemRemoved: IssueEvents.CommentRemoved,
+    });
   }
 }
 
 const tracker = new EventTracker();
-const issue = tracker.construct(() => new IssueModel(tracker));
-tracker.onCommit(); // start clean (issue is loaded)
+const issue = tracker.construct(() => new IssueModel(tracker)); // loaded — no events
 
-// user makes some edits
-issue.name = 'Faulty widget';
-issue.stage = 'InAnalysis';
+issue.name = 'Faulty widget';   // one operation → one event
+issue.stage = 'InAnalysis';     // another operation → another event
 
-// on Save:
-const events: GeneratedEvent<IssueEvents>[] = tracker.generateEvents<IssueEvents>();
-// events = [
-//   { eventType: 'SubmittedDetailsRevised', payload: { name: 'Faulty widget' }, trackingId: 1, targetId: ... },
-//   { eventType: 'StageTransitioned',       payload: { stage: 'InAnalysis' },    trackingId: 1, targetId: ... },
+tracker.events;
+// [
+//   { eventId: 1, eventType: 'SubmittedDetailsRevised', payload: { name: 'Faulty widget' }, trackingId: 1, targetId: 0, state: 'NotCommitted' },
+//   { eventId: 2, eventType: 'StageTransitioned',       payload: { stage: 'InAnalysis' },    trackingId: 1, targetId: 0, state: 'NotCommitted' },
 // ]
-await api.publishEvents(events);
-tracker.onCommit();
+
+// Autosave: send whatever is pending whenever the list changes.
+tracker.eventsChanged.subscribe(async () => {
+  const batch = tracker.pendingEvents;                // 1. get the pending events
+  if (batch.length === 0) return;
+  const response = await api.publishEvents(batch);    // 2. send them
+  tracker.onCommit(batch.map((e) => e.eventId), response.ids); // 3. only these become Committed
+});
 ```
 
-`generateEvents()` is a **pure read** — no mutation, no state transitions. Calling it twice with no intervening writes returns the same list.
+### `EventTracker`
+
+Extends `Tracker`, so it has undo/redo, validation, sessions, `construct()`/`new()` and `version` (see [`Tracker`](#tracker--dirtytracker)). It adds:
+
+```typescript
+readonly events: readonly TrackedEvent[]     // every recorded event, oldest first, in all states
+readonly pendingEvents: TrackedEvent[]       // the NotCommitted ones, oldest first
+readonly eventsChanged: TypedEvent<readonly TrackedEvent[]>   // an event was added, removed, or changed state
+onCommit<V = number>(eventIds: readonly number[], keys?: IdAssignment<V>[]): void
+withContext<T>(ctx: unknown, action: () => T): T   // ctx is passed to history entryFactory
+discardPendingChanges(): void
+isDirty / isDirtyChanged / canCommit / canCommitChanged
+```
+
+- **`isDirty`** is `true` while at least one event is `NotCommitted`. `canCommit` is `isDirty && isValid`.
+- **`onCommit(eventIds, keys?)`** marks exactly the events with those `eventId`s `Committed`. Nothing else changes state: events recorded while the request was in flight stay `NotCommitted`. Only ids are passed, so the events can travel through JSON, a store or a worker:
+
+```typescript
+issue.stage = 'InAnalysis';
+const inFlight = tracker.pendingEvents;   // [#1 InAnalysis] — sent
+issue.stage = 'InFixing';                 // #2, recorded while the request is in flight
+tracker.onCommit(inFlight.map((e) => e.eventId));   // #1 Committed, #2 still NotCommitted
+```
+
+You may acknowledge a subset. Committing an event twice, or committing an `Undone` one, is a no-op. Unknown ids are ignored, with a warning in development builds. `keys` writes server-assigned `@AutoId` values by `trackingId`, as on `DirtyTracker`; events recorded afterwards carry the real id.
+
+### Event states and undo/redo
+
+| Action | Effect on the event list |
+|---|---|
+| A new operation | Its events are added as `NotCommitted` |
+| `onCommit(eventIds)` | Those events become `Committed` |
+| Undo of an operation whose events were not sent | They become `Undone`: kept, never to be sent |
+| Redo of it | The same events become `NotCommitted` again |
+| Undo of an operation whose events were committed | They stay `Committed`. A **compensating** event is added (`NotCommitted`, with `compensates` = the reverted event's `eventId`) |
+| Redo before that compensation was sent | The compensation becomes `Undone` |
+| Redo after it was committed | A new event re-applies the change, compensating the compensation |
+| A new operation while redo is available | `Undone` events are dropped, just as the redo stack is |
+
+A committed event is never deleted or rewritten: it is what the server has. The only way to take it back is a compensating event.
+
+```typescript
+issue.stage = 'InAnalysis';               // #1 NotCommitted
+tracker.onCommit([1]);                    // #1 Committed
+tracker.undo();                           // #1 Committed, #2 { stage: 'Submitted' } NotCommitted, compensates: 1
+tracker.redo();                           // #2 Undone — never sent, nothing to compensate
+```
+
+**Coalescing.** Writes merged into one undo step by `coalesceWithin` update the still-pending event in place (same `eventId`). Typing "Faulty widget" sends one event, not thirteen. Once that event is committed, the next write starts a new one.
+
+**Sessions.** `session.end()` turns the session into one undo step. If none of its events was sent yet, they merge into one set of events for that step. `session.rollback()` removes the session's unsent events and compensates any it had already committed.
+
+**`tracker.new()`.** Constructor defaults are recorded as one event outside the undo stack. If the object is then added to an event collection while that event is still unsent, the event is dropped: the `itemAdded` / `added` entry already carries the full snapshot.
+
+**`discardPendingChanges()`** reverts what has not been sent, as far as it can be reverted cleanly:
+- Pending compensations are withdrawn by redoing.
+- Operations whose events are all unsent are undone.
+- The redo stack is dropped.
+
+It never forgets an unsent event whose change is still in the objects, such as one from an operation that was partly committed, or from `tracker.new()`. Those stay pending.
+
+**Autosave hook.** An event is recorded when its operation ends, so a `beforeChange` / `afterChange` subscriber (which runs during the write) does not see it yet. Use `tracker.eventsChanged`.
 
 ### `@EventTracked`
 
-Drop-in replacement for `@Tracked` that additionally tags the field with an **event type** on `options`. Everything else — validator, change hooks, `coalesceWithin`, undo/redo, dependency tracking, no-op detection — is identical.
+Drop-in replacement for `@Tracked` that also tags the field with an **event type**. Everything else is identical: validator, change hooks, `coalesceWithin`, undo/redo, dependency tracking, no-op detection.
 
 ```typescript
 @EventTracked(validator?, hooks?, options?)
@@ -1794,191 +1870,129 @@ Drop-in replacement for `@Tracked` that additionally tags the field with an **ev
 | Parameter | Type | Description |
 |---|---|---|
 | `validator` | `(self, newValue) => string \| undefined` | Same as `@Tracked` |
-| `hooks` | `{ beforeChange?, afterChange? }` | Same as `@Tracked`. Passing a bare function is accepted for backwards compatibility and maps to `beforeChange` |
-| `options.eventType` | `string` (typically an enum value) | The tag this field contributes to |
-| `options.coalesceWithin` | `number` | Same as `@Tracked` |
-| `options.history` | `HistoryConfig` | Turns the field into a history-tracked event stream |
+| `hooks` | `{ beforeChange?, afterChange? }` | Same as `@Tracked`. A bare function is accepted for backwards compatibility and maps to `beforeChange` |
+| `options.eventType` | `string` (typically an enum value) | The event type this field contributes to |
+| `options.coalesceWithin` | `number` | Same as `@Tracked`; coalesced writes also share one event |
+| `options.history` | `HistoryConfig` | The payload carries a list of entries instead of the final value (see below) |
 
-**Field-cluster grouping.** All fields on a class that share the same tag collapse into **one event**, whose payload contains **only the fields that are currently dirty relative to the last committed state**. Untouched fields are never included. `@Tracked` (untagged) fields continue to work — they participate in undo/redo/validation but do not contribute to event generation.
+**Field-cluster grouping.** Fields of one object that share a tag and change in the same operation form **one event**. Its payload holds only the fields that operation changed. Fields changed in different operations are separate events. `@Tracked` (untagged) fields take part in undo/redo/validation but never in events.
 
-**Do not name an `@EventTracked` field `trakrState`** — it collides with `TrackedObject.trakrState`, which is the enum used by the state machine. Use a different name (`stage`, `status`, `phase`, `workflowState`…).
+**History fields.** With `history: true` the payload is `{ field: [{ property, value }, …] }`, one entry per write in the operation. With `history: { entryFactory }` each entry is `entryFactory(self, newValue, oldValue, change, ctx)`, where `ctx` comes from `tracker.withContext(ctx, fn)`. A compensating event carries the reverting entry.
 
-### `EventTracker`
-
-Extends `Tracker` with one method:
-
-```typescript
-generateEvents<TEventType extends string = string>(): GeneratedEvent<TEventType>[]
-```
-
-Everything else is unchanged. An `EventTracker` used as a plain `Tracker` (never calling `generateEvents`) behaves **exactly** like a v2 `Tracker`. The one internal difference: `EventTracker.onCommit(keys)` also clears per-instance event-diff state, which is what makes "after commit, `generateEvents` returns `[]`" work.
+**Do not name an `@EventTracked` field `trakrState`**: it collides with `TrackedObject.trakrState`. Use a different name (`stage`, `status`, `phase`, `workflowState`…).
 
 ### `EventTrackedCollection<T>`
 
-Extends `TrackedCollection<T>` with an optional **lifecycle mapping** for item add/remove:
+Extends `TrackedCollection<T>`. The options choose the shape of the events a collection change produces. Every shape describes **what one operation did**.
+
+**Per-item events: `itemAdded` / `itemRemoved`.**
 
 ```typescript
-new EventTrackedCollection<CommentModel>(
-  tracker,
-  initialItems,
-  validator,
-  {
-    itemAdded: IssueEvents.CommentAdded,
-    itemRemoved: IssueEvents.CommentRemoved,
-  },
-);
+new EventTrackedCollection<CommentModel>(tracker, initialItems, validator, {
+  itemAdded: IssueEvents.CommentAdded,
+  itemRemoved: IssueEvents.CommentRemoved,
+});
 ```
 
-For items that are themselves `TrackedObject`s, the following per-item rules apply at generation time:
-
-| Item state | With `itemAdded` set | With `itemAdded` omitted |
+| The operation… | With the option set | Without it |
 |---|---|---|
-| `Insert` | One `itemAdded` event, payload = **all** `@EventTracked` fields on the item (regardless of tag) | No event |
-| `Deleted` | One `itemRemoved` event, payload = `{}`, `trackingId` always set, `targetId` = numeric `@AutoId` or `@Id` value (if present) | No event |
-| `Changed` | Per-field-cluster events (as if the item were a standalone `Changed` model) | Same — per-field-cluster events |
-| `Unchanged` | No event | No event |
+| adds an item | One `itemAdded` event, payload = **all** `@EventTracked` fields of the item | No event |
+| removes an item | One `itemRemoved` event, payload = `{}`, `trackingId` set, `targetId` = numeric `@AutoId` or `@Id` (if any) | No event |
+| edits an item in the collection | Per-field-cluster events, as for a standalone object | Same |
 
-Consumers can opt in to some lifecycle events but not others — the two options are independent. If both are omitted, `EventTrackedCollection` behaves like a plain `TrackedCollection` from the events perspective: only per-field events on `Changed` items are emitted.
+The two options are independent. Undoing an operation that produced no event for an item produces none either.
 
-**Insert-then-remove collapses to zero events.** If a `TrackedObject` is pushed to a collection and then removed before Save, its state returns to `Unchanged` (see [Object state machine](#object-state-machine) — `removed/do` from `Insert` collapses to `Unchanged`). No `itemAdded` event is emitted for an object that was never really added.
+**Aggregate events: `eventType`.** One event per operation for the whole collection. With `owner: { object, property }`, the slot folds into the owner's event under `property`. The payload slot is `{ added: [snapshot…], removed: [identity…], changed: [{ …identity, …changedFields }] }`. Collections of primitives omit `changed`.
 
-**Collections of primitives** — `EventTrackedCollection<string>`, `EventTrackedCollection<number>`, etc. — accept the lifecycle option bag but do not currently emit lifecycle events, because primitives have no `trakrId` or per-field tags. Track primitive add/remove via `collection.changed` if you need those events.
+**Ordered ops: `history: true`.** Instead of buckets, the slot is `{ ops: [{ op: 'add' | 'remove' | 'change', … }] }` in the order they happened within the operation. With `history: { entryFactory }` each op is `entryFactory(item, change, ctx, op)`, where `op` is `'add'`, `'remove'` or `'change'`; compensating entries carry the inverse kind.
 
-### `GeneratedEvent`
+Items passed to the constructor are treated as already persisted. Mutations made with tracking suppressed (`construct()`, `withTrackingSuppressed()`) produce no events. Item types in aggregate or history mode must declare an `@Id` or `@AutoId`.
+
+### `TrackedEvent` / `EventState`
 
 ```typescript
-interface GeneratedEvent<
-  TEventType extends string = string,
-  TPayload = Record<string, unknown>,
-> {
+interface GeneratedEvent<TEventType extends string = string, TPayload = Record<string, unknown>> {
   eventType: TEventType;
   payload: TPayload;
   trackingId?: number;
-  targetId?: number;
+  targetId?: unknown;
 }
+
+interface TrackedEvent<TEventType, TPayload> extends GeneratedEvent<TEventType, TPayload> {
+  readonly eventId: number;
+  readonly state: EventState;
+  readonly compensates?: number;
+}
+
+enum EventState { NotCommitted = 'NotCommitted', Committed = 'Committed', Undone = 'Undone' }
 ```
 
 | Field | When present | Notes |
 |---|---|---|
-| `eventType` | Always | The tag value from the consumer's enum / string-literal union |
-| `payload` | Always | For lifecycle `itemAdded`: all `@EventTracked` fields' current values. For field-cluster events: only the dirty fields carrying that tag. For lifecycle `itemRemoved`: `{}`. Values of `undefined` are normalised to `null` |
-| `trackingId` | On events emitted from `Insert`, `Changed`, or `Deleted` items | Correlate with the backend's `IdAssignment[]` response, or call `tracker.getByTrackingId()` to recover the object |
-| `targetId` | On events emitted from `Changed` or `Deleted` items when the model has a numeric `@AutoId` or `@Id` | `@AutoId` takes precedence; `@Id` is used as fallback. Non-numeric identity values are omitted |
-
-### Semantic rules
-
-1. **Only actual differences produce events.** trakr subscribes to `TrackedObject.changed` and maintains a per-property "original vs. current" diff since the last commit. A write, followed by another write back to the original value (or a `tracker.undo()`), removes the entry — no event is emitted for that field.
-
-2. **Insert emits everything, Changed emits deltas.** For `Insert` items, `itemAdded` sends the full snapshot of `@EventTracked` fields (a new aggregate is "born" with all its state). For `Changed` items, field-cluster events send only fields that actually changed.
-
-3. **`onCommit` resets the baseline.** After `tracker.onCommit()`, every property's "original" is its now-committed value. Subsequent edits are diffed against this new baseline. Undoing past a commit re-populates the diff naturally, because the property undo closures emit `changed` with the reversed old/new values.
-
-4. **`@Tracked` and `@EventTracked` are freely mixable on the same class.** `@Tracked` fields participate in undo/redo/validation as usual; they simply never appear in event payloads.
-
-5. **`tracker.new()` surfaces constructor defaults in the first event.** Use `tracker.new()` (instead of `tracker.construct()`) when the user creates a new object. Defaults set in the constructor appear in `generateEvents()` until `onCommit()` resets the baseline. The tracker is clean (`isDirty === false`) and the object is in `Unchanged` state immediately after `tracker.new()` returns — pushing it to an `EventTrackedCollection` then correctly transitions it to `Insert` and emits `itemAdded`. Use `tracker.construct()` for loading saved data — those writes are suppressed and produce no events.
+| `eventId` | Always | Unique within the tracker. Pass it to `onCommit` once the server has persisted the event |
+| `state` | Always | See [Event states and undo/redo](#event-states-and-undoredo) |
+| `compensates` | Compensating events | `eventId` of the committed event this one reverts |
+| `eventType` | Always | The tag from the consumer's enum / string-literal union |
+| `payload` | Always | What the operation changed, in the shape described above. `undefined` values are normalised to `null` |
+| `trackingId` | Events about a specific object | Correlate with the backend's `IdAssignment[]` response, or call `tracker.getByTrackingId()` |
+| `targetId` | Object events, when the model has an identity | Top-level objects: `getIdentity(obj)`. Per-item events: numeric `@AutoId` (or `@Id`), omitted otherwise |
 
 ### Ordering
 
-Event ordering is **deterministic**:
+Events are listed in the order they were recorded. Within one operation, event order is **deterministic**:
 
-1. **Object order** — objects appear in the events in the order they were registered with the tracker (typically the order they were pushed into their collections).
-2. **Field-cluster event order within one object** — determined by which of that object's `@EventTracked` fields with the same tag was **first declared** in the class body.
+1. **Object order**: objects appear in the order they were registered with the tracker.
+2. **Field-cluster order within one object**: by which of the object's `@EventTracked` fields with that tag was **declared first** in the class body.
 
-Consumers who need semantic ordering — for example, "field revisions before a state transition, so the backend's transition precondition sees the freshly-set field values" — control it by **declaring the transition field last** in the class body. trakr does not need to know which events are "transitions"; declaration order is the entire mechanism.
+To send field revisions before a state transition made in the same operation, **declare the transition field last**:
 
 ```typescript
 class IssueModel extends TrackedObject {
-  @EventTracked(IssueEvents.SubmittedDetailsRevised) accessor name: string = '';
-  @EventTracked(IssueEvents.AnalysisRevised)         accessor analysisSummary: string | null = null;
-  // Declared LAST → its event comes after all others.
-  @EventTracked(IssueEvents.StageTransitioned)       accessor stage: string = 'Submitted';
+  @EventTracked(undefined, undefined, { eventType: IssueEvents.SubmittedDetailsRevised }) accessor name: string = '';
+  // Declared LAST → within one operation its event comes after the others.
+  @EventTracked(undefined, undefined, { eventType: IssueEvents.StageTransitioned })       accessor stage: string = 'Submitted';
 }
 ```
 
-Given `issue.stage = 'InAnalysis'` and `issue.analysisSummary = 'AS'`, `generateEvents()` returns:
+Subclass `@EventTracked` fields appear **after** base-class fields.
 
-```
-[
-  { eventType: 'AnalysisRevised',    payload: { analysisSummary: 'AS' }, ... },
-  { eventType: 'StageTransitioned',  payload: { stage: 'InAnalysis' },   ... },
-]
-```
+### Granularity: one event per operation
 
-Subclass `@EventTracked` fields appear **after** base-class fields, matching the declaration order across the prototype chain.
+An event is one undo step, so granularity is controlled the same way undo granularity is:
 
-### Scalars vs. sequences: choosing the primitive
-
-`@EventTracked` and `EventTrackedCollection` look interchangeable when both can carry the same field on the wire — a `stage` property could sit on the model as either an accessor or an item in a collection. They are **not** interchangeable: they encode different semantics, and picking the wrong one silently loses information at Save time.
-
-**`@EventTracked` accessor — the field is a *value*.** Multiple writes in one session collapse to **one** event carrying the field's **final** value. That is correct behaviour: consumers care about "what the field is now", not "how many times the user retyped it". Typing `Faulty widget` character by character produces one `SubmittedDetailsRevised{name: 'Faulty widget'}`, not eleven.
-
-**`EventTrackedCollection` — the field is a *sequence of actions*.** Each push emits its own `itemAdded` event, in insertion order. Two pushes produce two events; they never collapse.
-
-The trap: state-machine-style fields *look* like scalars ("current stage"), so it is tempting to model them as `@EventTracked accessor stage`. That is wrong. A transition is not an update to a value — it is a discrete action, and every intermediate state must be persisted for the backend's transition preconditions (`from → to` allowed?) to hold on replay.
-
-```typescript
-// WRONG — accessor collapses "Submitted → InAnalysis → InFixing" into one event
-class IssueModel extends TrackedObject {
-  @EventTracked(IssueEvents.StageTransitioned) accessor stage: string = 'Submitted';
-}
-
-issue.stage = 'InAnalysis';
-issue.stage = 'InFixing';
-
-// generateEvents() returns ONE event with the final value:
-// [{ eventType: 'StageTransitioned', payload: { stage: 'InFixing' } }]
-// Backend replays: Submitted → InFixing, rejects as illegal transition.
-```
-
-```typescript
-// RIGHT — one StageTransitioned event per push, in order
-class StageTransition extends TrackedObject {
-  @EventTracked(IssueEvents.StageTransitioned) accessor stage: string;
-  transitionedAt: string;
-  transitionedBy: string | null;
-
-  constructor(t: Tracker, stage: string, at: string, by: string | null) {
-    super(t);
-    this.stage = stage;
-    this.transitionedAt = at;
-    this.transitionedBy = by;
-  }
-}
-
-class IssueModel extends TrackedObject {
-  stage: string = 'Submitted';                          // plain field, drives UI only
-  readonly transitions: EventTrackedCollection<StageTransition>;
-
-  constructor(t: Tracker) {
-    super(t);
-    this.transitions = new EventTrackedCollection<StageTransition>(
-      t, [], undefined, { itemAdded: IssueEvents.StageTransitioned },
-    );
-  }
-
-  transitionTo(target: string, by: string | null): void {
-    this.stage = target;
-    this.transitions.push(
-      this.tracker.construct(() => new StageTransition(this.tracker, target, new Date().toISOString(), by)),
-    );
-  }
-}
-
-issue.transitionTo('InAnalysis', 'alice');
-issue.transitionTo('InFixing', 'alice');
-
-// generateEvents() returns TWO events, in insertion order:
-// [
-//   { eventType: 'StageTransitioned', payload: { stage: 'InAnalysis' }, ... },
-//   { eventType: 'StageTransitioned', payload: { stage: 'InFixing' },   ... },
-// ]
-```
-
-**Rule of thumb.** If the field's meaning is *"what it is now"* and the backend does not need to see every intermediate write, use `@EventTracked` on an accessor. If each write is a *distinct, ordered action* the backend must apply sequentially — state transitions, audit log entries, phase changes, workflow steps — use `EventTrackedCollection` with an `itemAdded` tag.
+- **Every write is its own event**, which suits state transitions: `Submitted → InAnalysis → InFixing` is recorded as two `StageTransitioned` events, and the backend can check each transition.
+- **`coalesceWithin`** merges bursts such as typing into one pending event.
+- **Sessions** group a whole edit, such as a dialog, into one step and one set of events.
 
 ### Migration
 
-There is **nothing to migrate** from v2 → v3 for existing code. `Tracker`, `TrackedObject`, `TrackedCollection`, `@Tracked`, and `@AutoId` are unchanged. Opt in per class or per collection whenever the consumer needs event generation. A single tracker instance can mix event-tracked and non-event-tracked objects.
+**v6 → v7**
+
+7.0 replaces the on-demand event diff of 6.0 with the event list described above. `DirtyTracker` is unchanged.
+
+| v6 | v7 |
+|---|---|
+| `eventTracker.generateEvents()` | `eventTracker.pendingEvents` |
+| `eventTracker.onCommit(sentEvents, keys?)` | `eventTracker.onCommit(sentEvents.map((e) => e.eventId), keys?)`: pass the `eventId`s |
+| Several edits before a save → one collapsed event per object and type | One event per operation. Use `coalesceWithin` or a session to group writes |
+| Autosave from `afterChange` saw the change in `generateEvents()` | Subscribe to `eventTracker.eventsChanged` |
+| Undo past a save → a compensating diff in the next `generateEvents()` | The original event stays `Committed`; a compensating event (with `compensates`) is added |
+
+**v5 → v6**
+
+| v5 | v6 |
+|---|---|
+| `new Tracker()` | `new DirtyTracker()`. `Tracker` is now abstract; keep `Tracker` as the parameter type in models |
+| `eventTracker.onCommit()` / `onCommit(keys)` | `eventTracker.onCommit(sentEvents, keys?)`, passing the events the server persisted |
+| `eventTracker.deletedObjects`, `trakrState` on EventTracker objects | Removed / always `Unchanged`. Removals are `removed` entries or `itemRemoved` events |
+| `EventTracker.isDirty` right after `tracker.new()` was `false` | `true`: the defaults are unsent events |
+| Collection history `entryFactory(item, change, ctx)` | Gets a 4th argument, `op: 'add' \| 'remove' \| 'change'` |
+
+Calling `EventTracker.onCommit()` without arguments, or with anything but an array of `eventId`s as the first argument, throws a `TypeError`. `DirtyTracker` keeps the v5 `Tracker` behaviour unchanged, including undo across a commit.
+
+**v2 → v3**
+
+Nothing to migrate. Opt in per class or per collection whenever the consumer needs event generation. A single tracker instance can mix event-tracked and non-event-tracked objects.
 
 ---
 

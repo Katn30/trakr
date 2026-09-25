@@ -4,12 +4,14 @@ import { EventTracked } from "../src/EventTracked";
 import { EventTrackedCollection } from "../src/EventTrackedCollection";
 import { TrackedObject } from "../src/TrackedObject";
 import { TrackedCollection } from "../src/TrackedCollection";
+import { TrackedContainer } from "../src/TrackedContainer";
 import { Tracked } from "../src/Tracked";
 import { Tracker } from "../src/Tracker";
 import { AutoId, Id } from "../src/ExternallyAssigned";
 import { State } from "../src/State";
 import { GeneratedEvent } from "../src/GeneratedEvent";
 
+import { emitted, oneOperation, pendingIds } from "./eventHelpers";
 // ---------------------------------------------------------------------------- helpers
 function newEventTracker(): EventTracker {
   return new EventTracker();
@@ -100,18 +102,20 @@ describe("EventTracker.generateEvents — grouped events", () => {
   beforeEach(() => {
     tracker = newEventTracker();
     issue = tracker.construct(() => new IssueModel(tracker));
-    tracker.onCommit();
+    tracker.onCommit(pendingIds(tracker));
   });
 
   it("returns [] when tracker is clean", () => {
-    expect(tracker.generateEvents()).toEqual([]);
+    expect(emitted(tracker)).toEqual([]);
   });
 
   it("groups fields sharing eventType into one event", () => {
-    issue.name = "N";
-    issue.description = "D";
+    oneOperation(tracker, () => {
+      issue.name = "N";
+      issue.description = "D";
+    });
 
-    const events = tracker.generateEvents();
+    const events = emitted(tracker);
     expect(events).toHaveLength(1);
     expect(events[0].eventType).toBe(IssueEvents.SubmittedDetailsRevised);
     expect(events[0].payload).toEqual({ name: "N", description: "D" });
@@ -122,33 +126,35 @@ describe("EventTracker.generateEvents — grouped events", () => {
     issue.name = "N";
     issue.analysisSummary = "AS";
 
-    const events = tracker.generateEvents();
+    const events = emitted(tracker);
     expect(events).toHaveLength(2);
     expect(findEventsFor(events, IssueEvents.SubmittedDetailsRevised)[0].payload).toEqual({ name: "N" });
     expect(findEventsFor(events, IssueEvents.AnalysisRevised)[0].payload).toEqual({ analysisSummary: "AS" });
   });
 
-  it("net-zero scalar diff (A → B → A): no entry for that property", () => {
-    issue.name = "N";
-    issue.name = "";
-    expect(tracker.generateEvents()).toEqual([]);
+  it("net-zero scalar diff (A → B → A) within one operation: no entry for that property", () => {
+    oneOperation(tracker, () => {
+      issue.name = "N";
+      issue.name = "";
+    });
+    expect(emitted(tracker)).toEqual([]);
   });
 
   it("undo of a write yields no event", () => {
     issue.name = "N";
     tracker.undo();
-    expect(tracker.generateEvents()).toEqual([]);
+    expect(emitted(tracker)).toEqual([]);
   });
 
   it("@Tracked (untagged) fields do not participate in events", () => {
     issue.internalNote = "x";
-    expect(tracker.generateEvents()).toEqual([]);
+    expect(emitted(tracker)).toEqual([]);
   });
 
   it("Changed events carry targetId from @AutoId", () => {
     tracker.withTrackingSuppressed(() => { issue.id = 42; });
     issue.name = "N";
-    const events = tracker.generateEvents();
+    const events = emitted(tracker);
     expect(events[0].targetId).toBe(42);
   });
 });
@@ -166,12 +172,14 @@ describe("EventTracker — ungrouped default emission (test 1, 2)", () => {
     const tracker = newEventTracker();
     const m = tracker.construct(() => new M(tracker));
     tracker.withTrackingSuppressed(() => { m.id = "m1"; });
-    tracker.onCommit();
+    tracker.onCommit(pendingIds(tracker));
 
-    m.a = "A";
-    m.b = "B";
+    oneOperation(tracker, () => {
+      m.a = "A";
+      m.b = "B";
+    });
 
-    const events = tracker.generateEvents();
+    const events = emitted(tracker);
     expect(events).toHaveLength(1);
     expect(events[0].eventType).toBe("");
     expect(events[0].payload).toEqual({ a: "A", b: "B" });
@@ -189,13 +197,13 @@ describe("EventTracker — ungrouped default emission (test 1, 2)", () => {
     const tracker = newEventTracker();
     const m = tracker.construct(() => new M(tracker));
     tracker.withTrackingSuppressed(() => { m.id = "m1"; });
-    tracker.onCommit();
+    tracker.onCommit(pendingIds(tracker));
 
     m.a = "aa";
     m.b = "bb";
     m.c = "cc";
 
-    const events = tracker.generateEvents();
+    const events = emitted(tracker);
     expect(events).toHaveLength(3);
     expect(findEventsFor(events, "")[0].payload).toEqual({ a: "aa" });
     expect(findEventsFor(events, "X")[0].payload).toEqual({ b: "bb" });
@@ -215,13 +223,15 @@ describe("EventTracker — history mode on scalar properties (tests 4, 5, 6, 7, 
     const tracker = newEventTracker();
     const m = tracker.construct(() => new M(tracker));
     tracker.withTrackingSuppressed(() => { m.id = "m1"; });
-    tracker.onCommit();
+    tracker.onCommit(pendingIds(tracker));
 
-    m.s = "a";
-    m.s = "b";
-    m.s = "c";
+    oneOperation(tracker, () => {
+      m.s = "a";
+      m.s = "b";
+      m.s = "c";
+    });
 
-    const events = tracker.generateEvents();
+    const events = emitted(tracker);
     expect(events).toHaveLength(1);
     expect(events[0].payload).toEqual({
       s: [
@@ -248,16 +258,18 @@ describe("EventTracker — history mode on scalar properties (tests 4, 5, 6, 7, 
     const tracker = newEventTracker();
     const m = tracker.construct(() => new M(tracker));
     tracker.withTrackingSuppressed(() => { m.id = "m1"; });
-    tracker.onCommit();
+    tracker.onCommit(pendingIds(tracker));
 
-    tracker.withContext({ by: "alice" }, () => {
-      m.s = "a";
-    });
-    tracker.withContext({ by: "bob" }, () => {
-      m.s = "b";
+    oneOperation(tracker, () => {
+      tracker.withContext({ by: "alice" }, () => {
+        m.s = "a";
+      });
+      tracker.withContext({ by: "bob" }, () => {
+        m.s = "b";
+      });
     });
 
-    const events = tracker.generateEvents();
+    const events = emitted(tracker);
     expect(events).toHaveLength(1);
     expect(events[0].payload).toEqual({
       s: [
@@ -277,12 +289,12 @@ describe("EventTracker — history mode on scalar properties (tests 4, 5, 6, 7, 
     const tracker = newEventTracker();
     const m = tracker.construct(() => new M(tracker));
     tracker.withTrackingSuppressed(() => { m.id = "m1"; });
-    tracker.onCommit();
+    tracker.onCommit(pendingIds(tracker));
 
     m.s = "a";
     m.s = "ab";
 
-    const events = tracker.generateEvents();
+    const events = emitted(tracker);
     expect(events).toHaveLength(1);
     expect(events[0].payload).toEqual({
       s: [{ property: "s", value: "ab" }],
@@ -303,12 +315,14 @@ describe("EventTracker — history mode on scalar properties (tests 4, 5, 6, 7, 
     const tracker = newEventTracker();
     const m = tracker.construct(() => new M(tracker));
     tracker.withTrackingSuppressed(() => { m.id = "m1"; });
-    tracker.onCommit();
+    tracker.onCommit(pendingIds(tracker));
 
-    m.s = "one";
-    tracker.withContext("frame-ctx", () => { m.s = "two"; });
+    oneOperation(tracker, () => {
+      m.s = "one";
+      tracker.withContext("frame-ctx", () => { m.s = "two"; });
+    });
 
-    const events = tracker.generateEvents();
+    const events = emitted(tracker);
     expect(events[0].payload).toEqual({
       s: [
         { v: "one", ctx: undefined },
@@ -326,16 +340,16 @@ describe("EventTracker — history mode on scalar properties (tests 4, 5, 6, 7, 
     const tracker = newEventTracker();
     const m = tracker.construct(() => new M(tracker));
     tracker.withTrackingSuppressed(() => { m.id = "m1"; });
-    tracker.onCommit();
+    tracker.onCommit(pendingIds(tracker));
 
     m.s = "committed";
-    tracker.onCommit();
+    tracker.onCommit(pendingIds(tracker));
 
     // Post-commit undo — new chain entry is appended (not popped from historic session).
     tracker.undo();
     expect(m.s).toBe("");
 
-    const events = tracker.generateEvents();
+    const events = emitted(tracker);
     expect(events).toHaveLength(1);
     // Chain has one entry representing the reversion.
     const chain = (events[0].payload as { s: Array<{ property: string; value: string }> }).s;
@@ -347,13 +361,13 @@ describe("EventTracker — history mode on scalar properties (tests 4, 5, 6, 7, 
     const tracker = newEventTracker();
     const issue = tracker.construct(() => new IssueModel(tracker));
     tracker.withTrackingSuppressed(() => { issue.id = 10; });
-    tracker.onCommit();
+    tracker.onCommit(pendingIds(tracker));
 
     issue.name = "Alice";
-    tracker.onCommit();
+    tracker.onCommit(pendingIds(tracker));
 
     tracker.undo();
-    const events = tracker.generateEvents();
+    const events = emitted(tracker);
     expect(events).toHaveLength(1);
     expect(events[0].eventType).toBe(IssueEvents.SubmittedDetailsRevised);
     expect(events[0].payload).toEqual({ name: "" });
@@ -371,10 +385,12 @@ describe("EventTrackedCollection — legacy itemAdded/itemRemoved (BC)", () => {
       itemRemoved: IssueEvents.CommentRemoved,
     });
     const comment = tracker.construct(() => new CommentModel(tracker));
-    comments.push(comment);
-    comment.text = "hello";
+    oneOperation(tracker, () => {
+      comments.push(comment);
+      comment.text = "hello";
+    });
 
-    const events = tracker.generateEvents();
+    const events = emitted(tracker);
     const added = findEventsFor(events, IssueEvents.CommentAdded);
     expect(added).toHaveLength(1);
     expect(added[0].payload).toEqual({ text: "hello", status: "open" });
@@ -388,10 +404,10 @@ describe("EventTrackedCollection — legacy itemAdded/itemRemoved (BC)", () => {
       itemRemoved: IssueEvents.CommentRemoved,
     });
     tracker.withTrackingSuppressed(() => { comment.id = 77; });
-    tracker.onCommit();
+    tracker.onCommit(pendingIds(tracker));
 
     comments.remove(comment);
-    const events = tracker.generateEvents();
+    const events = emitted(tracker);
     expect(events).toHaveLength(1);
     expect(events[0].eventType).toBe(IssueEvents.CommentRemoved);
     expect(events[0].targetId).toBe(77);
@@ -410,10 +426,10 @@ describe("EventTrackedCollection — legacy itemAdded/itemRemoved (BC)", () => {
       itemRemoved: "product_removed",
     });
     tracker.withTrackingSuppressed(() => { product.id = 17; });
-    tracker.onCommit();
+    tracker.onCommit(pendingIds(tracker));
 
     products.remove(product);
-    const events = tracker.generateEvents();
+    const events = emitted(tracker);
     expect(events).toHaveLength(1);
     expect(events[0].eventType).toBe("product_removed");
     expect(events[0].targetId).toBe(17);
@@ -432,10 +448,10 @@ describe("EventTrackedCollection — legacy itemAdded/itemRemoved (BC)", () => {
       itemRemoved: "tag_removed",
     });
     tracker.withTrackingSuppressed(() => { tag.slug = "typescript"; });
-    tracker.onCommit();
+    tracker.onCommit(pendingIds(tracker));
 
     tags.remove(tag);
-    const events = tracker.generateEvents();
+    const events = emitted(tracker);
     expect(events).toHaveLength(1);
     expect(events[0].eventType).toBe("tag_removed");
     expect(events[0].trackingId).toBe(tag.trakrId);
@@ -474,11 +490,11 @@ describe("EventTrackedCollection — aggregate mode with owner (tests 10-12, 17,
     const author = tracker.construct(() => new Author(tracker));
     tracker.withTrackingSuppressed(() => { author.name = "alice"; author.bio = "old bio"; });
     post.authors.push(author);
-    tracker.onCommit();
+    tracker.onCommit(pendingIds(tracker));
 
     author.bio = "new bio";
 
-    const events = tracker.generateEvents();
+    const events = emitted(tracker);
     expect(events).toHaveLength(1);
     expect(events[0].eventType).toBe("PostUpdated");
     expect(events[0].payload).toEqual({
@@ -492,19 +508,27 @@ describe("EventTrackedCollection — aggregate mode with owner (tests 10-12, 17,
     expect(events[0].trackingId).toBe(post.trakrId);
   });
 
-  it("test 11: collection add + immediate remove of a new item — absent from added and removed", () => {
+  it("test 11: add + remove of a new item — one event each; within one operation, none", () => {
     const tracker = newEventTracker();
     const post = tracker.construct(() => new Post(tracker, { eventType: "PostUpdated" }));
     tracker.withTrackingSuppressed(() => { post.postId = "p1"; });
-    tracker.onCommit();
+    tracker.onCommit(pendingIds(tracker));
 
     const author = tracker.construct(() => new Author(tracker));
     tracker.withTrackingSuppressed(() => { author.name = "alice"; });
     post.authors.push(author);
     post.authors.remove(author);
+    expect(emitted(tracker).map((e) => (e.payload as any).authors)).toEqual([
+      { added: [{ name: "alice", bio: "" }], removed: [], changed: [] },
+      { added: [], removed: ["alice"], changed: [] },
+    ]);
 
-    const events = tracker.generateEvents();
-    expect(events).toEqual([]);
+    tracker.onCommit(pendingIds(tracker));
+    oneOperation(tracker, () => {
+      post.authors.push(author);
+      post.authors.remove(author);
+    });
+    expect(emitted(tracker)).toEqual([]);
   });
 
   it("test 12: edit then remove of existing item — item in removed only, not changed", () => {
@@ -514,12 +538,14 @@ describe("EventTrackedCollection — aggregate mode with owner (tests 10-12, 17,
     const author = tracker.construct(() => new Author(tracker));
     tracker.withTrackingSuppressed(() => { author.name = "alice"; author.bio = "b"; });
     post.authors.push(author);
-    tracker.onCommit();
+    tracker.onCommit(pendingIds(tracker));
 
-    author.bio = "edited";
-    post.authors.remove(author);
+    oneOperation(tracker, () => {
+      author.bio = "edited";
+      post.authors.remove(author);
+    });
 
-    const events = tracker.generateEvents();
+    const events = emitted(tracker);
     expect(events).toHaveLength(1);
     const slot = (events[0].payload as any).authors;
     expect(slot.changed).toEqual([]);
@@ -531,18 +557,20 @@ describe("EventTrackedCollection — aggregate mode with owner (tests 10-12, 17,
     const tracker1 = newEventTracker();
     const post1 = tracker1.construct(() => new Post(tracker1, { history: true }));
     tracker1.withTrackingSuppressed(() => { post1.postId = "p1"; });
-    tracker1.onCommit();
+    tracker1.onCommit(pendingIds(tracker1));
 
     const author1 = tracker1.construct(() => new Author(tracker1));
     tracker1.withTrackingSuppressed(() => { author1.name = "a1"; });
-    post1.authors.push(author1);
-    author1.bio = "b1";
     const author2 = tracker1.construct(() => new Author(tracker1));
     tracker1.withTrackingSuppressed(() => { author2.name = "a2"; });
-    post1.authors.push(author2);
-    post1.authors.remove(author1);
+    oneOperation(tracker1, () => {
+      post1.authors.push(author1);
+      author1.bio = "b1";
+      post1.authors.push(author2);
+      post1.authors.remove(author1);
+    });
 
-    const events1 = tracker1.generateEvents();
+    const events1 = emitted(tracker1);
     const slot1 = (events1[0].payload as any).authors;
     expect(slot1.ops).toBeDefined();
     // ops sequence: add author1, change author1, add author2, remove author1
@@ -553,12 +581,12 @@ describe("EventTrackedCollection — aggregate mode with owner (tests 10-12, 17,
     const tracker2 = newEventTracker();
     const post2 = tracker2.construct(() => new Post(tracker2, { eventType: "X" }));
     tracker2.withTrackingSuppressed(() => { post2.postId = "p2"; });
-    tracker2.onCommit();
+    tracker2.onCommit(pendingIds(tracker2));
 
     const a = tracker2.construct(() => new Author(tracker2));
     tracker2.withTrackingSuppressed(() => { a.name = "a"; });
     post2.authors.push(a);
-    const events2 = tracker2.generateEvents();
+    const events2 = emitted(tracker2);
     const slot2 = (events2[0].payload as any).authors;
     expect(slot2.added).toBeDefined();
     expect(slot2.changed).toBeDefined();
@@ -569,13 +597,13 @@ describe("EventTrackedCollection — aggregate mode with owner (tests 10-12, 17,
     const tracker = newEventTracker();
     const post = tracker.construct(() => new Post(tracker, { eventType: "PostUpdated" }));
     tracker.withTrackingSuppressed(() => { post.postId = "p1"; });
-    tracker.onCommit();
+    tracker.onCommit(pendingIds(tracker));
 
     const author = tracker.construct(() => new Author(tracker));
     tracker.withTrackingSuppressed(() => { author.name = "alice"; });
     post.authors.push(author);
 
-    const events = tracker.generateEvents();
+    const events = emitted(tracker);
     expect(events).toHaveLength(1);
     expect(events[0].eventType).toBe("PostUpdated");
     // No per-op itemAdded event should be present
@@ -631,16 +659,16 @@ describe("Identity extraction (tests 13, 14, 15, 16)", () => {
     const item = tracker.construct(() => new NamedItem(tracker));
     tracker.withTrackingSuppressed(() => { item.id = "abc"; item.v = "old"; });
     o.items.push(item);
-    tracker.onCommit();
+    tracker.onCommit(pendingIds(tracker));
 
     item.v = "new";
-    let events = tracker.generateEvents();
+    let events = emitted(tracker);
     const changed = (events[0].payload as any).items.changed;
     expect(changed).toEqual([{ id: "abc", v: "new" }]);
 
     o.items.remove(item);
-    events = tracker.generateEvents();
-    const slot = (events[0].payload as any).items;
+    events = emitted(tracker);
+    const slot = (events[events.length - 1].payload as any).items;
     expect(slot.removed).toEqual(["abc"]);
   });
 
@@ -669,16 +697,16 @@ describe("Identity extraction (tests 13, 14, 15, 16)", () => {
     const item = tracker.construct(() => new CompositeItem(tracker));
     tracker.withTrackingSuppressed(() => { item.key1 = "k"; item.key2 = 5; item.v = "old"; });
     o.items.push(item);
-    tracker.onCommit();
+    tracker.onCommit(pendingIds(tracker));
 
     item.v = "new";
-    const events = tracker.generateEvents();
+    const events = emitted(tracker);
     const changed = (events[0].payload as any).items.changed;
     expect(changed).toEqual([{ key1: "k", key2: 5, v: "new" }]);
 
     o.items.remove(item);
-    const events2 = tracker.generateEvents();
-    const slot = (events2[0].payload as any).items;
+    const events2 = emitted(tracker);
+    const slot = (events2[events2.length - 1].payload as any).items;
     expect(slot.removed).toEqual([{ key1: "k", key2: 5 }]);
   });
 
@@ -702,18 +730,18 @@ describe("Identity extraction (tests 13, 14, 15, 16)", () => {
     const tracker = newEventTracker();
     const o = tracker.construct(() => new Owner(tracker));
     tracker.withTrackingSuppressed(() => { o.ownerId = "o1"; });
-    tracker.onCommit();
+    tracker.onCommit(pendingIds(tracker));
 
     const item = tracker.construct(() => new AutoItem(tracker));
     tracker.withTrackingSuppressed(() => { item.v = "hello"; });
     o.items.push(item);
 
-    const events = tracker.generateEvents();
+    const events = emitted(tracker);
     const slot = (events[0].payload as any).items;
     expect(slot.added).toEqual([{ id: null, v: "hello" }]);
 
     // Commit and verify @AutoId is patched
-    tracker.onCommit([{ trackingId: item.trakrId, value: 999 }]);
+    tracker.onCommit(pendingIds(tracker), [{ trackingId: item.trakrId, value: 999 }]);
     expect(item.id).toBe(999);
   });
 
@@ -742,11 +770,11 @@ describe("Identity extraction (tests 13, 14, 15, 16)", () => {
     const item = tracker.construct(() => new MixedItem(tracker));
     tracker.withTrackingSuppressed(() => { item.key = "k"; item.v = "old"; });
     o.items.push(item);
-    tracker.onCommit([{ trackingId: item.trakrId, value: 42 }]);
+    tracker.onCommit(pendingIds(tracker), [{ trackingId: item.trakrId, value: 42 }]);
     expect(item.id).toBe(42);
 
     item.v = "new";
-    const events = tracker.generateEvents();
+    const events = emitted(tracker);
     const changed = (events[0].payload as any).items.changed;
     expect(changed).toEqual([{ key: "k", id: 42, v: "new" }]);
   });
@@ -802,10 +830,10 @@ describe("GeneratedEvent.targetId widened to unknown", () => {
     const tracker = newEventTracker();
     const m = tracker.construct(() => new M(tracker));
     tracker.withTrackingSuppressed(() => { m.key = "K"; });
-    tracker.onCommit();
+    tracker.onCommit(pendingIds(tracker));
 
     m.v = "hello";
-    const events = tracker.generateEvents();
+    const events = emitted(tracker);
     expect(events[0].targetId).toBe("K");
   });
 
@@ -819,10 +847,10 @@ describe("GeneratedEvent.targetId widened to unknown", () => {
     const tracker = newEventTracker();
     const m = tracker.construct(() => new M(tracker));
     tracker.withTrackingSuppressed(() => { m.k1 = "K"; m.k2 = 7; });
-    tracker.onCommit();
+    tracker.onCommit(pendingIds(tracker));
 
     m.v = "hello";
-    const events = tracker.generateEvents();
+    const events = emitted(tracker);
     expect(events[0].targetId).toEqual({ k1: "K", k2: 7 });
   });
 });
@@ -836,9 +864,9 @@ describe("Legacy collection with primitive items", () => {
       itemAdded: IssueEvents.TagAdded,
       itemRemoved: IssueEvents.TagRemoved,
     });
-    tracker.onCommit();
+    tracker.onCommit(pendingIds(tracker));
     tags.push("new-tag");
-    const events = tracker.generateEvents();
+    const events = emitted(tracker);
     expect(events).toEqual([]);
   });
 });
@@ -849,11 +877,11 @@ describe("EventTracker.generateEvents — pure read", () => {
   it("does not modify tracker dirty state or object state", () => {
     const tracker = newEventTracker();
     const issue = tracker.construct(() => new IssueModel(tracker));
-    tracker.onCommit();
+    tracker.onCommit(pendingIds(tracker));
     issue.name = "N";
     const before = { isDirty: tracker.isDirty, version: tracker.version };
-    tracker.generateEvents();
-    tracker.generateEvents();
+    emitted(tracker);
+    emitted(tracker);
     expect(tracker.isDirty).toBe(before.isDirty);
     expect(tracker.version).toBe(before.version);
   });
@@ -874,7 +902,7 @@ describe("@EventTracked construction respects tracker.construct()", () => {
     }
     const tracker = newEventTracker();
     tracker.construct(() => new M(tracker, { name: "initial" }));
-    expect(tracker.generateEvents()).toEqual([]);
+    expect(emitted(tracker)).toEqual([]);
     expect(tracker.isDirty).toBe(false);
   });
 });
@@ -901,15 +929,17 @@ describe("tracker.new()", () => {
   it("defaults set in constructor appear in generateEvents()", () => {
     const tracker = newEventTracker();
     tracker.new(() => new Issue(tracker));
-    const events = tracker.generateEvents();
+    const events = emitted(tracker);
     expect(events).toHaveLength(1);
     expect(events[0].eventType).toBe("X");
     expect(events[0].payload).toEqual({ status: "open", priority: 1 });
   });
 
-  it("tracker is not dirty after tracker.new()", () => {
+  it("tracker is dirty after tracker.new() — the new object's defaults are unpersisted events", () => {
     const tracker = newEventTracker();
     tracker.new(() => new Issue(tracker));
+    expect(tracker.isDirty).toBe(true);
+    tracker.onCommit(pendingIds(tracker));
     expect(tracker.isDirty).toBe(false);
   });
 
@@ -936,31 +966,42 @@ describe("tracker.new()", () => {
   it("same constructor: tracker.construct() with data produces no events", () => {
     const tracker = newEventTracker();
     tracker.construct(() => new Issue(tracker, { status: "closed", priority: 3 }));
-    expect(tracker.generateEvents()).toEqual([]);
+    expect(emitted(tracker)).toEqual([]);
     expect(tracker.isDirty).toBe(false);
   });
 
   it("after onCommit(), generateEvents() returns []", () => {
     const tracker = newEventTracker();
     tracker.new(() => new Issue(tracker));
-    tracker.onCommit();
-    expect(tracker.generateEvents()).toEqual([]);
+    tracker.onCommit(pendingIds(tracker));
+    expect(emitted(tracker)).toEqual([]);
   });
 
-  it("post-construction mutations on a new() object are included in the event", () => {
+  it("post-construction mutations on a new() object are events of their own", () => {
     const tracker = newEventTracker();
     const issue = tracker.new(() => new Issue(tracker));
     issue.status = "in-progress";
-    const events = tracker.generateEvents();
-    expect(events).toHaveLength(1);
-    expect(events[0].payload).toEqual({ status: "in-progress", priority: 1 });
+    expect(emitted(tracker).map((e) => e.payload)).toEqual([
+      { status: "open", priority: 1 },
+      { status: "in-progress" },
+    ]);
   });
 
-  it("reverting a default back to empty string produces no entry for that property", () => {
+  it("a constructor that sets a property back to its initial value produces no entry for it", () => {
+    class Plain extends TrackedObject {
+      @Id id: string = "p";
+      @EventTracked(undefined, undefined, { eventType: "X" }) accessor status: string = "";
+      @EventTracked(undefined, undefined, { eventType: "X" }) accessor priority: number = 0;
+      constructor(t: Tracker) {
+        super(t);
+        this.status = "tmp";
+        this.status = "";
+        this.priority = 1;
+      }
+    }
     const tracker = newEventTracker();
-    const issue = tracker.new(() => new Issue(tracker));
-    issue.status = "";
-    const events = tracker.generateEvents();
+    tracker.new(() => new Plain(tracker));
+    const events = emitted(tracker);
     expect(events).toHaveLength(1);
     expect(events[0].payload).toEqual({ priority: 1 });
   });
@@ -994,7 +1035,7 @@ describe("tracker.new() — object pushed to EventTrackedCollection emits itemAd
     const task = tracker.new(() => new Task(tracker, "custom"));
     collection.push(task);
 
-    const events = tracker.generateEvents();
+    const events = emitted(tracker);
     expect(events).toHaveLength(1);
     expect(events[0].eventType).toBe("task_added");
     expect(events[0].payload).toMatchObject({ type: "custom" });
@@ -1003,9 +1044,198 @@ describe("tracker.new() — object pushed to EventTrackedCollection emits itemAd
   it("existing tracker.new() standalone behavior is unaffected — defaults appear in generateEvents()", () => {
     const tracker = newEventTracker();
     tracker.new(() => new Task(tracker, "custom"));
-    const events = tracker.generateEvents();
+    const events = emitted(tracker);
     expect(events).toHaveLength(1);
     expect(events[0].eventType).toBe("task_changed");
     expect(events[0].payload).toEqual({ type: "custom" });
+  });
+});
+
+// ---------------------------------------------------------------------------- redo after compensating commit
+
+describe("EventTracker — redo after compensating commit produces a fresh event", () => {
+  class Item extends TrackedObject {
+    @Id id: number = 0;
+    constructor(tracker: EventTracker, id: number) {
+      super(tracker);
+      this.id = id;
+    }
+  }
+
+  class Container extends TrackedContainer {
+    readonly items: EventTrackedCollection<Item>;
+    constructor(tracker: EventTracker, initial: Item[]) {
+      super(tracker);
+      this.items = new EventTrackedCollection(tracker, initial, undefined, { eventType: "items" });
+      this.trackChild(this.items);
+    }
+  }
+
+  it("mutate → commit → undo → commit → redo re-materializes the original event", () => {
+    const tracker = newEventTracker();
+    const initial = [tracker.construct(() => new Item(tracker, 1))];
+    tracker.construct(() => new Container(tracker, initial));
+    const container = tracker.trackedObjects.find(o => o instanceof Container) as Container;
+
+    // (1) Add id=2, save
+    const two = tracker.new(() => new Item(tracker, 2));
+    container.items.push(two);
+    expect(emitted(tracker)).toEqual([
+      { eventType: "items", payload: { added: [{ id: 2 }], removed: [], changed: [] } },
+    ]);
+    tracker.onCommit(pendingIds(tracker));
+
+    // (2) Undo, save — the compensating event shifts the baseline
+    tracker.undo();
+    expect(emitted(tracker)).toEqual([
+      { eventType: "items", payload: { added: [], removed: [2], changed: [] } },
+    ]);
+    tracker.onCommit(pendingIds(tracker));
+
+    // (3) Redo — should re-mutate from the new baseline
+    tracker.redo();
+    expect(emitted(tracker)).toEqual([
+      { eventType: "items", payload: { added: [{ id: 2 }], removed: [], changed: [] } },
+    ]);
+  });
+
+  it("full cycle: redo → commit → undo yields the compensating event again", () => {
+    const tracker = newEventTracker();
+    const initial = [tracker.construct(() => new Item(tracker, 1))];
+    tracker.construct(() => new Container(tracker, initial));
+    const container = tracker.trackedObjects.find(o => o instanceof Container) as Container;
+
+    const two = tracker.new(() => new Item(tracker, 2));
+    container.items.push(two);
+    tracker.onCommit(pendingIds(tracker));
+
+    tracker.undo();
+    tracker.onCommit(pendingIds(tracker));
+
+    tracker.redo();
+    tracker.onCommit(pendingIds(tracker));
+
+    tracker.undo();
+    expect(emitted(tracker)).toEqual([
+      { eventType: "items", payload: { added: [], removed: [2], changed: [] } },
+    ]);
+  });
+
+  it("mutate → commit → undo → redo (no compensating commit) still leaves items Unchanged", () => {
+    const tracker = newEventTracker();
+    const initial = [tracker.construct(() => new Item(tracker, 1))];
+    tracker.construct(() => new Container(tracker, initial));
+    const container = tracker.trackedObjects.find(o => o instanceof Container) as Container;
+
+    const two = tracker.new(() => new Item(tracker, 2));
+    container.items.push(two);
+    tracker.onCommit(pendingIds(tracker));
+
+    tracker.undo();
+    tracker.redo();
+
+    expect(two.trakrState).toBe(State.Unchanged);
+    expect(emitted(tracker)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------- undo after commit of an UNRELATED later op
+
+describe("EventTracker — undo after commit only reverses the undone op, leaves committed inserts alone", () => {
+  class Item extends TrackedObject {
+    @Id readonly id: number;
+    constructor(tracker: EventTracker, id: number) {
+      super(tracker);
+      this.id = id;
+    }
+  }
+
+  class Container extends TrackedContainer {
+    @EventTracked() accessor phase: "a" | "b" = "a";
+    readonly items: EventTrackedCollection<Item>;
+    constructor(tracker: EventTracker) {
+      super(tracker);
+      this.items = new EventTrackedCollection<Item>(tracker, [], undefined, {
+        owner: { object: this, property: "items" },
+        itemAdded: "items",
+        itemRemoved: "items",
+      });
+      this.trackChild(this.items);
+    }
+  }
+
+  function setup() {
+    const tracker = newEventTracker();
+    const c = tracker.new(() => new Container(tracker));
+    const item = tracker.new(() => new Item(tracker, 42));
+    c.items.push(item);           // op A — insert into collection
+    c.phase = "b";                 // op B — LAST op on undo stack, unrelated to item
+    tracker.onCommit(pendingIds(tracker));            // both persisted
+    return { tracker, c, item };
+  }
+
+  it("commit_then_undo_preserves_committed_inserts", () => {
+    const { tracker, c, item } = setup();
+
+    expect(item.trakrState).toBe(State.Unchanged);
+    expect(c.trakrState).toBe(State.Unchanged);
+    expect(c.phase).toBe("b");
+
+    tracker.undo();
+
+    expect(c.phase).toBe("a");
+    // item's committed Insert must not have been rolled back — it stays Unchanged
+    // even though an unrelated later operation was undone.
+    expect(item.trakrState).toBe(State.Unchanged);
+    expect(c.items.collection).toContain(item);
+    // EventTracker objects carry no Insert/Changed/Deleted state — the undo shows up
+    // only as a compensating `phase` event.
+  });
+
+  it("commit_then_undo_no_spurious_removed", () => {
+    const { tracker, c, item } = setup();
+
+    tracker.undo();
+
+    const events = emitted(tracker);
+    // The only real change is phase going b → a. There must be no "items" event
+    // targeting `item`, because the user never removed it and it is still in c.items.
+    // (spurious removals surface either as `removed: [...]` in a bucketed payload or
+    //  as a per-op itemRemoved event with matching targetId.)
+    for (const e of events) {
+      if (e.eventType === "items") {
+        expect(e.targetId).not.toBe(item.id);
+        const payload = e.payload as { removed?: unknown[] } | undefined;
+        const removed = payload?.removed ?? [];
+        expect(removed).not.toContain(item.id);
+        expect(removed).not.toContainEqual({ id: item.id });
+      }
+    }
+  });
+
+  it("commit_then_undo_only_reverses_last_op", () => {
+    const { tracker, c, item } = setup();
+
+    tracker.undo();
+
+    // No tracked object is ever marked Deleted on an EventTracker:
+    // item is in the collection → its state must not be Deleted.
+    for (const listed of c.items.collection) {
+      expect(listed.trakrState).not.toBe(State.Deleted);
+    }
+    expect(item.trakrState).not.toBe(State.Deleted);
+  });
+
+  it("commit_then_undo_then_redo", () => {
+    const { tracker, c, item } = setup();
+
+    tracker.undo();
+    tracker.redo();
+
+    expect(c.phase).toBe("b");
+    expect(item.trakrState).toBe(State.Unchanged);
+    expect(c.trakrState).toBe(State.Unchanged);
+    expect(c.items.collection).toContain(item);
+    expect(emitted(tracker)).toEqual([]);
   });
 });

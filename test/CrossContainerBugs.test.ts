@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { TrackedContainer } from "../src/TrackedContainer";
 import { TrackedCollection } from "../src/TrackedCollection";
 import { Tracker } from "../src/Tracker";
+import { DirtyTracker } from "../src/DirtyTracker";
 import { EventTracker } from "../src/EventTracker";
 import { Tracked } from "../src/Tracked";
 import { EventTracked } from "../src/EventTracked";
@@ -174,7 +175,7 @@ describe("Bug 1A — @Tracked cross-container validator re-run via closure (cont
   let parent: ParentTracked;
 
   beforeEach(() => {
-    tracker = new Tracker();
+    tracker = new DirtyTracker();
     parent = tracker.construct(() => new ParentTracked(tracker));
   });
 
@@ -205,7 +206,7 @@ describe("Bug 1C — inner-write revalidation: state written via onChange, child
   let parent: ParentInnerWrite;
 
   beforeEach(() => {
-    tracker = new Tracker();
+    tracker = new DirtyTracker();
     parent = tracker.construct(() => new ParentInnerWrite(tracker));
   });
 

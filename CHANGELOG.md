@@ -1,5 +1,146 @@
 # Changelog
 
+## [7.0.1] — 2026-09-25
+
+> 7.0.0 was not published; this is the first 7.x release. Changes are listed against 6.0.0.
+
+### Breaking: `EventTracker` keeps an event list — each event has an id and a state
+
+In 6.0, `EventTracker` computed pending events on demand as the difference between the current state and what the server had acknowledged. 7.0 replaces that with an **event list**, the event-side counterpart of the undo stack:
+- Every operation records its events.
+- Each event has an `eventId` and a `state`.
+- Undo/redo change event states rather than recomputing a diff.
+
+The list is readable, so it can also be shown to the user. `DirtyTracker` is unchanged.
+
+**The model.**
+
+- **`tracker.events`** holds every recorded event, oldest first. Each has an `eventId` and a `state`: `EventState.NotCommitted`, `Committed` or `Undone`. Compensating events also carry `compensates`, the `eventId` of the event they revert. New exports: `EventState` and `TrackedEvent`.
+- **`tracker.pendingEvents`** holds the `NotCommitted` events: what to send.
+- **`tracker.eventsChanged`** fires whenever an event is added, removed or changes state. Use it as the autosave trigger.
+- **One operation, one set of events.** Each payload describes only what that operation changed, in the configured shape: field clusters, `itemAdded` / `itemRemoved`, `{ added, removed, changed }` buckets, or history `{ ops }`.
+
+**Undo / redo.**
+
+| Action | Effect |
+|---|---|
+| New operation | Its events are added as `NotCommitted` |
+| `onCommit(eventIds)` | Those events become `Committed` |
+| Undo, events not sent | They become `Undone`; redo makes the same events `NotCommitted` again |
+| Undo, events committed | They stay `Committed`; a compensating `NotCommitted` event is added |
+| Redo, compensation not sent | The compensation becomes `Undone` |
+| Redo, compensation committed | A new event re-applies the change |
+| New operation while redo is available | `Undone` events are dropped with the redo stack |
+
+A committed event is never deleted or rewritten; it can only be reverted by a compensating event.
+
+**Other rules.**
+
+- **Coalesced writes** (`coalesceWithin`) update their still-pending event in place (same `eventId`). After it is committed, the next write starts a new event.
+- **Sessions:** `end()` merges the session's unsent events like its single undo step; `rollback()` removes them and compensates any the session had already committed.
+- **`tracker.new()`** records the constructor defaults as one creation event outside the undo stack. That event is dropped if the object is then added to an event collection before it was sent, because the addition already carries the full snapshot.
+- **`discardPendingChanges()`**:
+  - withdraws pending compensations (by redoing);
+  - undoes operations whose events are all unsent;
+  - drops the redo stack.
+
+  It never drops an unsent event whose change is still in the objects, e.g. from a partly committed operation or from `tracker.new()`.
+
+**Breaking changes from 6.0.**
+
+- **`generateEvents()` is removed.** Read `pendingEvents` instead.
+- **`onCommit(eventIds, keys?)`** takes the **`eventId`s** of the events the server persisted, instead of the event objects. Only those events change state. `keys` (placeholder `trackingId` → real `@AutoId`) is unchanged. Because only ids are passed, events can be serialised freely; in 6.0, copies of events were ignored with a warning.
+- **Several writes are no longer collapsed** into one event per object and type. Each operation is its own event; group writes with `coalesceWithin` or a session.
+- **`beforeChange` / `afterChange` no longer see the triggering event.** An operation's events are recorded when it ends, after both hooks. Subscribe to `eventsChanged` instead.
+- **`isDirty`** means "at least one `NotCommitted` event".
+
+#### Migration (6.x → 7.0)
+
+| 6.x | 7.0 |
+|---|---|
+| `eventTracker.generateEvents()` | `eventTracker.pendingEvents` |
+| `eventTracker.onCommit(sentEvents, keys?)` | `eventTracker.onCommit(sentEvents.map((e) => e.eventId), keys?)` |
+| Several edits before a save → one collapsed event per object and type | One event per operation; group with `coalesceWithin` or a session |
+| Autosave triggered from `afterChange` | Subscribe to `eventTracker.eventsChanged` |
+| Undo past a save → a compensating diff | A compensating event with `compensates`; the original stays `Committed` |
+
+---
+
+## [6.0.0] — 2026-09-25
+
+### Breaking: `Tracker` split into `DirtyTracker` (batch saves) and `EventTracker` (event stream)
+
+`Tracker` used to serve two different persistence patterns: Save-button forms, where object state is the truth and one atomic commit persists it, and autosave over event-sourced backends, where every change is an event the server acknowledges. The two need different commit and undo semantics, and serving both from one class caused the recurring `EventTracker` bugs: lost mid-flight edits, phantom `removed` entries after undo, and redo returning no event.
+
+`Tracker` is now an **abstract base** holding what both patterns share: change events, validation, sessions, the undo/redo stack, `construct()` / `new()`, coalescing and `version`. `new Tracker()` throws.
+
+#### `DirtyTracker` — today's `Tracker`, renamed
+
+Behaviour is unchanged from 5.x: object states (`Insert` / `Changed` / `Deleted` / `Unchanged`), `isDirty` / `canCommit`, `deletedObjects`, atomic `onCommit(keys?)`, and undo across a commit (a committed insert becomes `Deleted` on undo, and so on).
+
+It keeps the 5.2.2 fix: `onCommit()` attaches each object's commit-state undo hook to the most recent operation that actually touched that object. Before, it used whichever operation was on top of the undo stack. `push child → edit parent → onCommit → undo` used to flip the still-present child to `Deleted`; now it only reverts the parent edit.
+
+#### `EventTracker` — pending events are a diff against the persisted baseline
+
+- **`onCommit(persistedEvents, keys?)`** acknowledges exactly the events passed in, matched by identity against what `generateEvents()` returned. Edits made while a save was in flight stay pending instead of being wiped. A subset of events can be acknowledged; acknowledging twice is a no-op; foreign events (e.g. copies) are ignored with a development warning.
+- **`isDirty`** means "at least one unpersisted event exists"; `canCommit` is `isDirty && isValid`.
+- **Undo**: withdraws the change if it is still pending (`A → B → undo` leaves only A); otherwise emits a compensating event (`A → save → undo` produces the reversal). Redo is symmetric. This now also holds for history-mode properties and history-mode collections: an unsent entry is removed rather than a reversal being appended.
+- **No object state.** Objects stay `Unchanged`, there is no `deletedObjects`, and undo can no longer invent `removed` entries for items that are still in their collection. Collection add/remove is computed against each collection's baseline. A removed item stays registered but stops counting towards `isValid` until it is re-added.
+- **`discardPendingChanges()`** reverts to the last acknowledged save (redoing it if it had been undone), then forgets anything still pending.
+- Collection mutations made with tracking suppressed (`construct()`, `withTrackingSuppressed()`) are not events. Like suppressed field writes, they update the baseline silently. Previously a suppressed push into a primitive aggregate collection was reported as `added`.
+- Collection history `entryFactory` receives a 4th argument, `op: 'add' | 'remove' | 'change'`, exported as `CollectionOpKind`.
+
+The event payload shapes (field clusters, `itemAdded` / `itemRemoved`, `{ added, removed, changed }`, `{ ops }`) are unchanged.
+
+#### Migration
+
+| 5.x | 6.0 |
+|---|---|
+| `new Tracker()` | `new DirtyTracker()` (keep `Tracker` as the type in model constructors) |
+| `eventTracker.onCommit()` | `eventTracker.onCommit(events)` — the array returned by `generateEvents()` that was sent |
+| `eventTracker.onCommit(keys)` | `eventTracker.onCommit(events, keys)` |
+| `eventTracker.deletedObjects` / `trakrState` | Removed / always `Unchanged` |
+| `EventTracker.isDirty` right after `tracker.new()` was `false` | `true` — the defaults are pending events |
+| Collection history `entryFactory(item, change, ctx)` | Receives a 4th argument, `op: 'add' \| 'remove' \| 'change'` |
+
+The old `EventTracker.onCommit()` / `onCommit(keys)` forms throw a `TypeError` that names the new signature.
+
+For `EventTracker`, this supersedes the 5.2.1 mechanism, which rewrote redo-stack commit actions so that `mutate → commit → undo → commit → redo` produced an event. With the baseline model that behaviour needs no special handling.
+
+---
+
+## [5.2.2] — 2026-09-25
+
+### Fix: `undo` after `onCommit` no longer fabricates deletions for committed inserts
+
+Fixes a bug where calling `tracker.undo()` after `onCommit()` could mark previously-committed `Insert` objects as `Deleted` — even when the operation being undone was unrelated to those objects. On `EventTracker`, this surfaced as a spurious `removed` entry in `generateEvents()`, causing consumers wired to auto-save to send a `DELETE` for rows the user never removed.
+
+**The problem.** `onCommit()` attached each committed object's state-transition undo/redo hook to whichever operation happened to be at the top of the undo stack, regardless of whether that operation had actually touched the object. When the user later did `push child; edit parent field; onCommit(); undo()`, the child's Insert→Unchanged commit transition got wired to the parent's field edit — so undoing the field edit *also* reversed the child's commit transition, flipping the still-in-collection child to `Deleted`.
+
+**What changed.** `Tracker.onCommit()` now attaches each committed object's state-transition hook to the most recent operation in the undo stack whose actions actually target that object (falling back to no hook if none exists). Undoing an operation that did not touch a committed object leaves that object's committed state alone.
+
+**Backwards compatibility.**
+
+- Existing behavior when the undone operation IS the one that inserted/deleted/changed the committed object is preserved — the "compensating remove event after commit+undo of the same insert" case still works.
+- `_commitStateOperation` (used by `isDirty` and `discardPendingChanges`) still reflects the global last operation at commit time.
+- No public API changes.
+
+## [5.2.1] — 2026-09-24
+
+### Fix: `EventTracker` `redo` after a compensating `onCommit` now produces a fresh event
+
+Fixes a bug where the sequence `mutate → onCommit → undo → onCommit → redo` on an `EventTracker` left tracked items in `Unchanged` state, causing `generateEvents()` to return `[]` instead of the event equivalent to the original mutation.
+
+**The problem.** When a caller commits the compensating change produced by `undo` — the pattern used by event-sourced backends that persist every user action as its own event — the pending operation sits in the redo stack. That operation still carries a commit-state action wired for the pre-compensation baseline (its `redo` closure resets state to `Unchanged`). A subsequent `redo()` replayed only that stale closure, leaving items `Unchanged` and dropping the event that should have been re-materialized.
+
+**What changed.** `EventTracker.onCommit(keys)` now walks `_redoOperations` after the base commit and rewrites each commit-state action to be aware of the new baseline: its `redo` restores the original transient state (`Insert`/`Deleted`/`Changed`) and its `undo` cleanly resets to `Unchanged`. After `redo()`, `generateEvents()` returns an event equivalent to the original mutation, ready to be persisted as a separate downstream event.
+
+**Backwards compatibility.**
+
+- Only affects `EventTracker`. Base `Tracker` semantics are unchanged.
+- The single-commit sequence `mutate → onCommit → undo → redo` (no `onCommit` between `undo` and `redo`) still leaves items in `Unchanged` state.
+- Full `mutate → commit → undo → commit → redo → commit → undo` cycles now produce the same event alternation indefinitely.
+
 ## [5.2.0] — 2026-09-15
 
 ### New: `beforeChange` / `afterChange` events and change hooks

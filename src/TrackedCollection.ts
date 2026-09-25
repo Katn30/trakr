@@ -20,15 +20,9 @@ export class TrackedCollection<T> implements Array<T>, ITracked {
   public get dirtyCounter(): number {
     return this._dirtyCounter;
   }
-  private set dirtyCounter(value: number) {
-    this._dirtyCounter = value;
-  }
 
   public get isDirty(): boolean {
     return this._isDirty;
-  }
-  private set isDirty(value: boolean) {
-    this._isDirty = value;
   }
 
   public get trakrIsValid(): boolean {
@@ -178,7 +172,7 @@ export class TrackedCollection<T> implements Array<T>, ITracked {
 
   private undoSplice(start: number, items: T[], removed: T[]): void {
     this.tracker.withTrackingSuppressed(() => {
-      this.collection.splice(start, items?.length ?? 0, ...removed);
+      this.collection.splice(start, items.length, ...removed);
       this.collection = [...this.collection];
       const event = new TrackedCollectionChanged<T>(
         removed,

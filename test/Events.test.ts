@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { TrackedObject } from "../src/TrackedObject";
 import { Tracker } from "../src/Tracker";
+import { DirtyTracker } from "../src/DirtyTracker";
 import { Tracked } from "../src/Tracked";
 import { TrackedCollection } from "../src/TrackedCollection";
 
@@ -29,7 +30,7 @@ class SetterModel extends TrackedObject {
 
 describe("TrackedObject.changed", () => {
   it("fires on initial write", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new SimpleModel(tracker));
     const events: string[] = [];
 
@@ -40,7 +41,7 @@ describe("TrackedObject.changed", () => {
   });
 
   it("fires during undo with swapped old/new values", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new SimpleModel(tracker));
     const newValues: string[] = [];
 
@@ -52,7 +53,7 @@ describe("TrackedObject.changed", () => {
   });
 
   it("fires during redo", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new SimpleModel(tracker));
     const newValues: string[] = [];
 
@@ -65,7 +66,7 @@ describe("TrackedObject.changed", () => {
   });
 
   it("includes property name, oldValue, and newValue", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new SimpleModel(tracker));
     const events: { property: string; oldValue: unknown; newValue: unknown }[] = [];
 
@@ -76,7 +77,7 @@ describe("TrackedObject.changed", () => {
   });
 
   it("works on setter-decorated properties too", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new SetterModel(tracker));
     const events: string[] = [];
 
@@ -89,7 +90,7 @@ describe("TrackedObject.changed", () => {
 
 describe("TrackedObject.trackedChanged", () => {
   it("fires on initial write", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new SimpleModel(tracker));
     const events: string[] = [];
 
@@ -100,7 +101,7 @@ describe("TrackedObject.trackedChanged", () => {
   });
 
   it("does NOT fire during undo", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new SimpleModel(tracker));
     const events: string[] = [];
 
@@ -112,7 +113,7 @@ describe("TrackedObject.trackedChanged", () => {
   });
 
   it("does NOT fire during redo", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new SimpleModel(tracker));
     const events: string[] = [];
 
@@ -125,7 +126,7 @@ describe("TrackedObject.trackedChanged", () => {
   });
 
   it("works on setter-decorated properties too", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new SetterModel(tracker));
     const events: string[] = [];
 
@@ -142,7 +143,7 @@ describe("TrackedObject.trackedChanged", () => {
 
 describe("TrackedCollection.changed", () => {
   it("fires on initial push", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const items = new TrackedCollection<string>(tracker);
     const added: string[][] = [];
 
@@ -153,7 +154,7 @@ describe("TrackedCollection.changed", () => {
   });
 
   it("fires during undo with swapped added/removed", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const items = new TrackedCollection<string>(tracker);
     const removedLog: string[][] = [];
 
@@ -165,7 +166,7 @@ describe("TrackedCollection.changed", () => {
   });
 
   it("fires during redo", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const items = new TrackedCollection<string>(tracker);
     const addedLog: string[][] = [];
 
@@ -180,7 +181,7 @@ describe("TrackedCollection.changed", () => {
 
 describe("TrackedCollection.trackedChanged", () => {
   it("fires on initial push", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const items = new TrackedCollection<string>(tracker);
     const added: string[][] = [];
 
@@ -191,7 +192,7 @@ describe("TrackedCollection.trackedChanged", () => {
   });
 
   it("does NOT fire during undo", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const items = new TrackedCollection<string>(tracker);
     const events: unknown[] = [];
 
@@ -203,7 +204,7 @@ describe("TrackedCollection.trackedChanged", () => {
   });
 
   it("does NOT fire during redo", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const items = new TrackedCollection<string>(tracker);
     const events: unknown[] = [];
 
@@ -216,7 +217,7 @@ describe("TrackedCollection.trackedChanged", () => {
   });
 
   it("fires once per mutation, not once per item", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const items = new TrackedCollection<string>(tracker);
     let fireCount = 0;
 

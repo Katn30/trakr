@@ -17,9 +17,10 @@ export interface TrackedPropertyChanged {
 
 export abstract class TrackedObject implements ITracked, StateTarget {
   private _dirtyCounter: number = 0;
-  private _validationMessages: Map<string, string | undefined> | undefined;
+  private _validationMessages: Map<string, string | undefined> = new Map();
   private _isValid: boolean = true;
   private _state: State = State.Unchanged;
+  private _validityReleased: boolean = false;
 
   public readonly trakrId: number;
 
@@ -49,11 +50,6 @@ export abstract class TrackedObject implements ITracked, StateTarget {
   }
 
   /** @internal */
-  _getDirtyCounter(): number {
-    return this._dirtyCounter;
-  }
-
-  /** @internal */
   _setDirtyCounter(value: number): void {
     this._dirtyCounter = value;
   }
@@ -61,7 +57,7 @@ export abstract class TrackedObject implements ITracked, StateTarget {
   // ---- Public API ----
 
   public get validationMessages(): Map<string, string | undefined> {
-    return this._validationMessages ?? new Map<string, string>();
+    return this._validationMessages;
   }
   private set validationMessages(value: Map<string, string | undefined>) {
     this._validationMessages = value;
@@ -70,10 +66,18 @@ export abstract class TrackedObject implements ITracked, StateTarget {
   public get trakrIsValid(): boolean {
     return this._isValid;
   }
+  /**
+   * @internal True while this object sits outside its collection on an
+   * EventTracker: its validity no longer counts towards `tracker.isValid`.
+   */
+  get _isValidityReleased(): boolean {
+    return this._validityReleased;
+  }
+
   protected _setIsValid(value: boolean): void {
     const wasValid = this._isValid;
     this._isValid = value;
-    if (wasValid !== value) {
+    if (wasValid !== value && !this._validityReleased) {
       this.tracker._onValidityChanged(wasValid, value);
     }
   }
@@ -97,7 +101,6 @@ export abstract class TrackedObject implements ITracked, StateTarget {
       throw new Error(`${this.constructor.name} must be created inside tracker.construct()`);
     }
     this.trakrId = tracker._nextTrackingId();
-    this.validationMessages = new Map<string, string>();
     tracker._trackObject(this);
   }
 
@@ -117,6 +120,10 @@ export abstract class TrackedObject implements ITracked, StateTarget {
 
   /** @internal */
   public _markRemoved(): void {
+    if (!this.tracker._tracksObjectState) {
+      this._releaseValidity();
+      return;
+    }
     const prevState = this._state;
     const prevDirtyCounter = this._dirtyCounter;
     const wasValid = this._isValid;
@@ -147,6 +154,10 @@ export abstract class TrackedObject implements ITracked, StateTarget {
 
   /** @internal */
   public _markAdded(): void {
+    if (!this.tracker._tracksObjectState) {
+      this._reclaimValidity();
+      return;
+    }
     if (this._state !== State.Unchanged) return;
     if (this.tracker._isTrackingSuppressed) return;
     const wasValid = this._isValid;
@@ -163,6 +174,34 @@ export abstract class TrackedObject implements ITracked, StateTarget {
         applyStateTransition(this, "added", "undo");
       },
       new OperationProperties(this, "__state__", PropertyType.Object)
+    );
+  }
+
+  // Stateless trackers keep removed objects tracked (they may come back via undo
+  // or re-add) but stop counting their validity until they do.
+  private _releaseValidity(): void {
+    if (this._validityReleased) return;
+    const setReleased = (released: boolean) => {
+      if (!this._isValid) this.tracker._onValidityChanged(!released, released);
+      this._validityReleased = released;
+    };
+    this.tracker._doAndTrack(
+      () => setReleased(true),
+      () => setReleased(false),
+      new OperationProperties(this, "__state__", PropertyType.Object),
+    );
+  }
+
+  private _reclaimValidity(): void {
+    if (!this._validityReleased) return;
+    const setReleased = (released: boolean) => {
+      this._validityReleased = released;
+      if (!this._isValid) this.tracker._onValidityChanged(!released, released);
+    };
+    this.tracker._doAndTrack(
+      () => setReleased(false),
+      () => setReleased(true),
+      new OperationProperties(this, "__state__", PropertyType.Object),
     );
   }
 

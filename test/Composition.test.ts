@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { TrackedObject } from "../src/TrackedObject";
 import { Tracker } from "../src/Tracker";
+import { DirtyTracker } from "../src/DirtyTracker";
 import { Tracked } from "../src/Tracked";
 import { TrackedCollection } from "../src/TrackedCollection";
 
@@ -134,7 +135,7 @@ class CountedCollection extends TrackedObject {
 
 describe("Automatic composing – @Tracked setter → @Tracked setter", () => {
   it("writes inside @Tracked setter body compose into one undo step", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new NameModel(tracker));
 
     model.fullName = "John Doe";
@@ -150,7 +151,7 @@ describe("Automatic composing – @Tracked setter → @Tracked setter", () => {
   });
 
   it("redo restores all properties written inside the setter", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new NameModel(tracker));
 
     model.fullName = "John Doe";
@@ -165,7 +166,7 @@ describe("Automatic composing – @Tracked setter → @Tracked setter", () => {
 
 describe("Automatic composing – @Tracked setter → TrackedCollection mutation", () => {
   it("collection mutation inside @Tracked setter body composes into one undo step", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new TagModel(tracker));
 
     model.tag = "active";
@@ -181,7 +182,7 @@ describe("Automatic composing – @Tracked setter → TrackedCollection mutation
   });
 
   it("redo restores both the property and the collection", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new TagModel(tracker));
 
     model.tag = "active";
@@ -196,7 +197,7 @@ describe("Automatic composing – @Tracked setter → TrackedCollection mutation
 
 describe("Automatic composing – @Tracked accessor onChange → TrackedCollection mutation", () => {
   it("collection mutation inside onChange composes into one undo step", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new AccessorTagModel(tracker));
 
     model.tag = "active";
@@ -213,7 +214,7 @@ describe("Automatic composing – @Tracked accessor onChange → TrackedCollecti
   });
 
   it("redo restores both the accessor and the collection", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new AccessorTagModel(tracker));
 
     model.tag = "active";
@@ -226,7 +227,7 @@ describe("Automatic composing – @Tracked accessor onChange → TrackedCollecti
   });
 
   it("onChange does not fire during undo or redo", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new AccessorTagModel(tracker));
 
     model.tag = "active";
@@ -241,7 +242,7 @@ describe("Automatic composing – @Tracked accessor onChange → TrackedCollecti
 
 describe("Automatic composing – @Tracked accessor onChange → @Tracked accessor", () => {
   it("accessor writes inside onChange compose into one undo step", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new AccessorNameModel(tracker));
 
     model.fullName = "John Doe";
@@ -258,7 +259,7 @@ describe("Automatic composing – @Tracked accessor onChange → @Tracked access
   });
 
   it("redo restores all accessors written inside onChange", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new AccessorNameModel(tracker));
 
     model.fullName = "John Doe";
@@ -274,7 +275,7 @@ describe("Automatic composing – @Tracked accessor onChange → @Tracked access
 
 describe("Automatic composing – TrackedCollection.changed → @Tracked setter", () => {
   it("collection mutation and changed-listener property write compose into one undo step", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const order = tracker.construct(() => new OrderModel(tracker));
 
     order.items.push("item-1");
@@ -290,7 +291,7 @@ describe("Automatic composing – TrackedCollection.changed → @Tracked setter"
   });
 
   it("redo restores both collection and property", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const order = tracker.construct(() => new OrderModel(tracker));
 
     order.items.push("item-1");
@@ -303,7 +304,7 @@ describe("Automatic composing – TrackedCollection.changed → @Tracked setter"
   });
 
   it("multiple pushes each compose with their listener update separately", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const order = tracker.construct(() => new OrderModel(tracker));
 
     order.items.push("item-1");
@@ -322,7 +323,7 @@ describe("Automatic composing – TrackedCollection.changed → @Tracked setter"
 
 describe("Automatic composing – TrackedObject.trackedChanged → @Tracked setter", () => {
   it("property write inside trackedChanged listener composes into one undo step", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new TitleModel(tracker));
 
     model.title = "Hello";
@@ -338,7 +339,7 @@ describe("Automatic composing – TrackedObject.trackedChanged → @Tracked sett
   });
 
   it("redo restores both the source property and the listener-written property", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new TitleModel(tracker));
 
     model.title = "Hello";
@@ -351,7 +352,7 @@ describe("Automatic composing – TrackedObject.trackedChanged → @Tracked sett
   });
 
   it("trackedChanged listener does not fire during undo or redo", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new TitleModel(tracker));
 
     model.title = "Hello";
@@ -368,7 +369,7 @@ describe("Automatic composing – TrackedObject.trackedChanged → @Tracked sett
 
 describe("Automatic composing – TrackedCollection.trackedChanged → @Tracked setter", () => {
   it("property write inside trackedChanged listener composes into one undo step", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new CountedCollection(tracker));
 
     model.items.push("a");
@@ -384,7 +385,7 @@ describe("Automatic composing – TrackedCollection.trackedChanged → @Tracked 
   });
 
   it("redo restores both the collection and the listener-written property", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new CountedCollection(tracker));
 
     model.items.push("a");
@@ -397,7 +398,7 @@ describe("Automatic composing – TrackedCollection.trackedChanged → @Tracked 
   });
 
   it("trackedChanged listener does not fire during undo or redo", () => {
-    const tracker = new Tracker();
+    const tracker = new DirtyTracker();
     const model = tracker.construct(() => new CountedCollection(tracker));
 
     model.items.push("a");

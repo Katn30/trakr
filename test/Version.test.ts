@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { Tracker } from "../src/Tracker";
+import { DirtyTracker } from "../src/DirtyTracker";
 import { TrackedObject } from "../src/TrackedObject";
 import { Tracked } from "../src/Tracked";
 
@@ -29,7 +30,7 @@ describe("Tracker.version", () => {
   let person: PersonModel;
 
   beforeEach(() => {
-    tracker = new Tracker();
+    tracker = new DirtyTracker();
     person = tracker.construct(() => new PersonModel(tracker));
   });
 
@@ -49,7 +50,7 @@ describe("Tracker.version", () => {
   });
 
   it("increments on every write even when auto-coalescing into the same undo operation", () => {
-    const t = new Tracker();
+    const t = new DirtyTracker();
     const p = t.construct(() => new CoalescePersonModel(t));
     p.name = "Al";
     p.name = "Alice";
@@ -115,7 +116,7 @@ describe("Tracker.versionChanged", () => {
   let person: PersonModel;
 
   beforeEach(() => {
-    tracker = new Tracker();
+    tracker = new DirtyTracker();
     person = tracker.construct(() => new PersonModel(tracker));
   });
 
@@ -175,7 +176,7 @@ describe("Tracker.versionChanged", () => {
   });
 
   it("fires for every write including auto-coalesced ones — version increments each time", () => {
-    const t = new Tracker();
+    const t = new DirtyTracker();
     const p = t.construct(() => new CoalescePersonModel(t));
     const received: number[] = [];
     t.versionChanged.subscribe((v) => received.push(v));
@@ -187,7 +188,7 @@ describe("Tracker.versionChanged", () => {
   });
 
   it("fires on every write even when auto-coalesced — model value changed", () => {
-    const t = new Tracker();
+    const t = new DirtyTracker();
     const p = t.construct(() => new CoalescePersonModel(t));
     const handler = vi.fn();
     t.versionChanged.subscribe(handler);
@@ -216,7 +217,7 @@ describe("Tracker.version with session.rollback()", () => {
   let person: PersonModel;
 
   beforeEach(() => {
-    tracker = new Tracker();
+    tracker = new DirtyTracker();
     person = tracker.construct(() => new PersonModel(tracker));
   });
 

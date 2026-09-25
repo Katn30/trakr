@@ -4,7 +4,6 @@ import { TrackedCollection } from "./TrackedCollection";
 import { OperationProperties } from "./OperationProperties";
 import { PropertyType } from "./PropertyType";
 import { CollectionUtilities } from "./CollectionUtilities";
-import { IdAssignment } from "./ExternallyAssigned";
 import { State } from "./State";
 import { validate, validateSingleProperty } from "./Registry";
 import { DependencyTracker, COLLECTION_VERSION_KEY } from "./DependencyTracker";
@@ -13,11 +12,17 @@ import { TrackedObject } from "./TrackedObject";
 import { TrackerSession, PropertyScope } from "./TrackerSession";
 import { ITrackerContext } from "./ITrackerContext";
 
-export class Tracker implements ITrackerContext {
+/**
+ * Shared core of every tracker: reactive change events, validation, sessions and
+ * the undo/redo operation stack. Persistence semantics live in the subclasses:
+ * {@link DirtyTracker} (batch commit of object state) and {@link EventTracker}
+ * (stream of events acknowledged by the server). Cannot be instantiated directly.
+ */
+export abstract class Tracker implements ITrackerContext {
   private _currentOperation: Operation | undefined;
-  private readonly _redoOperations: Operation[];
-  private readonly _undoOperations: Operation[];
-  private _commitStateOperation: Operation | undefined;
+  protected readonly _redoOperations: Operation[];
+  protected readonly _undoOperations: Operation[];
+  protected _commitStateOperation: Operation | undefined;
   private _isDirty: boolean;
   private _canUndo: boolean;
   private _canRedo: boolean;
@@ -32,15 +37,11 @@ export class Tracker implements ITrackerContext {
   private _composingBaseIndex: number | undefined;
   private _composingRedoLength: number | undefined;
   private _currentSession: TrackerSession | undefined;
-  private _version: number = 0;
+  protected _version: number = 0;
   public _isReplaying: boolean = false;
   private _pendingRevalidations: Array<{ obj: ITracked; prop: string | undefined }> = [];
 
   public readonly trackedObjects: TrackedObject[] = [];
-
-  public get deletedObjects(): TrackedObject[] {
-    return this.trackedObjects.filter(obj => obj.trakrState === State.Deleted);
-  }
 
   public readonly trackedCollections: TrackedCollection<any>[] = [];
 
@@ -116,7 +117,37 @@ export class Tracker implements ITrackerContext {
     return this._constructionDepth > 0;
   }
 
+  /**
+   * @internal Whether tracked objects carry Insert/Changed/Deleted state.
+   * True for DirtyTracker, false for EventTracker (whose pending changes are a
+   * diff against the persisted baseline, not a per-object state).
+   */
+  public abstract readonly _tracksObjectState: boolean;
+
+  /** Subclass-specific definition of "has unsaved work". */
+  protected abstract _computeIsDirty(): boolean;
+
+  // ---- Operation lifecycle hooks. No-ops here; EventTracker keeps its event list through them.
+
+  /** A write is about to start (`extended` = it coalesces into the existing `op`). */
+  protected _onOperationStart(_op: Operation, _extended: boolean): void {}
+  /** A top-level write finished recording into `op`. */
+  protected _onOperationEnd(_op: Operation): void {}
+  /** `op` was just undone or redone. */
+  protected _onReplayed(_op: Operation): void {}
+  /** Undone operations were dropped from the redo stack and can never be redone. */
+  protected _onOperationsDropped(_ops: readonly Operation[]): void {}
+  /** `tracker.new()` finished constructing its objects. */
+  protected _onNewCompleted(): void {}
+  /** A session ended: `composed` became the single undo step `result`. */
+  protected _onSessionEnded(_composed: readonly Operation[], _result: Operation): void {}
+  /** A session was rolled back: `reverted` were undone and removed. */
+  protected _onSessionRolledBack(_reverted: readonly Operation[]): void {}
+
   public constructor() {
+    if (new.target === Tracker) {
+      throw new Error("Tracker is abstract — instantiate DirtyTracker or EventTracker");
+    }
     this._currentOperation = undefined;
     this._redoOperations = [];
     this._undoOperations = [];
@@ -139,7 +170,7 @@ export class Tracker implements ITrackerContext {
   /** @internal */
   public _untrackObject(trackedObject: TrackedObject) {
     this.trackedObjects.splice(this.trackedObjects.indexOf(trackedObject), 1);
-    if (!trackedObject.trakrIsValid) this._invalidCount--;
+    if (!trackedObject.trakrIsValid && !trackedObject._isValidityReleased) this._invalidCount--;
     this.isValid = this._invalidCount === 0;
   }
 
@@ -202,6 +233,7 @@ export class Tracker implements ITrackerContext {
     }
     this._constructionDepth--;
     this.isValid = this._invalidCount === 0;
+    this._onNewCompleted();
     this.reset();
     return result;
   }
@@ -244,12 +276,14 @@ export class Tracker implements ITrackerContext {
 
       if (this.shouldCoalesceChanges(properties)) {
         this._currentOperation = CollectionUtilities.getLast(this._undoOperations)!;
+        this._onOperationStart(this._currentOperation, true);
         this._version++;
         this.versionChanged.emit(this._version);
       } else {
         this._currentOperation = new Operation();
+        this._onOperationStart(this._currentOperation, false);
         this._undoOperations.push(this._currentOperation);
-        this._redoOperations.length = 0;
+        this._onOperationsDropped(this._redoOperations.splice(0));
         this.reset();
         this._version++;
         this.versionChanged.emit(this._version);
@@ -270,6 +304,7 @@ export class Tracker implements ITrackerContext {
     }
 
     if (this.isEndingCurrentOperation(properties)) {
+      const finished = this._currentOperation!;
       this._currentOperation = undefined;
       this._currentOperationOwner = undefined;
       this._currentOperationPropertyName = undefined;
@@ -279,7 +314,10 @@ export class Tracker implements ITrackerContext {
         this.revalidateTargeted(obj, prop);
       }
       this.revalidateTargeted(properties.trackedObject, properties.property);
-    } else if (isInnerWrite) {
+      this._onOperationEnd(finished);
+      this.reset();
+    } else {
+      // Not the write that opened the operation, so necessarily an inner one.
       this._pendingRevalidations.push({ obj: properties.trackedObject, prop: properties.property });
     }
   }
@@ -350,13 +388,6 @@ export class Tracker implements ITrackerContext {
     return this._trackingIdCounter++;
   }
 
-  public onCommit<V = number>(keys?: IdAssignment<V>[]): void {
-    const lastOp = CollectionUtilities.getLast(this._undoOperations);
-    this.trackedObjects.forEach((obj) => obj._onCommitted(lastOp, keys as IdAssignment<unknown>[] | undefined));
-    this._commitStateOperation = lastOp;
-    this.reset();
-  }
-
   public discardPendingChanges(): void {
     const commitIdx = this._commitStateOperation !== undefined
       ? this._undoOperations.indexOf(this._commitStateOperation)
@@ -368,13 +399,11 @@ export class Tracker implements ITrackerContext {
     this._commitStateOperation = undefined;
 
     if (toRevert.length > 0) {
-      this._isReplaying = true;
-      this.withTrackingSuppressed(() => {
+      this.replay(() => {
         for (let i = toRevert.length - 1; i >= 0; i--) {
           toRevert[i].undo();
         }
       });
-      this._isReplaying = false;
       this._version -= toRevert.length;
       this.versionChanged.emit(this._version);
     }
@@ -392,12 +421,34 @@ export class Tracker implements ITrackerContext {
     return this._undoOperations.includes(op);
   }
 
-  private reset(): void {
+  /** Runs `action` as a replay (undo/redo/rollback): tracking suppressed, no new ops recorded. */
+  protected replay(action: () => void): void {
+    this._isReplaying = true;
+    try {
+      this.withTrackingSuppressed(action);
+    } finally {
+      this._isReplaying = false;
+    }
+  }
+
+  /**
+   * @internal Chains a side-effect onto the action of the write identified by
+   * `properties` in the operation currently being recorded, so it is undone and
+   * redone right after that write.
+   */
+  public _recordSideEffect(
+    redoAction: () => void,
+    undoAction: () => void,
+    properties: OperationProperties,
+  ): void {
+    // Only called from forward (non-replay, non-suppressed) writes, which always run inside an operation.
+    this._currentOperation!.attachAfter(properties, redoAction, undoAction);
+  }
+
+  protected reset(): void {
     this.canUndo = this._undoOperations.length > 0;
     this.canRedo = this._redoOperations.length > 0;
-    this.isDirty =
-      CollectionUtilities.getLast(this._undoOperations) !==
-      this._commitStateOperation;
+    this.isDirty = this._computeIsDirty();
   }
 
   public startSession(scope?: PropertyScope[]): TrackerSession {
@@ -418,7 +469,7 @@ export class Tracker implements ITrackerContext {
     this._currentSession = undefined;
 
     const composed = this._undoOperations.splice(this._composingBaseIndex);
-    this._redoOperations.splice(this._composingRedoLength!);
+    this._onOperationsDropped(this._redoOperations.splice(this._composingRedoLength!));
     this._composingBaseIndex = undefined;
     this._composingRedoLength = undefined;
 
@@ -427,19 +478,17 @@ export class Tracker implements ITrackerContext {
       return;
     }
 
-    if (composed.length === 1) {
-      this._undoOperations.push(composed[0]);
-      this.reset();
-      return;
-    }
-
-    const merged = new Operation();
-    for (const op of composed) {
-      for (const action of op.actions) {
-        merged.add(action.redoAction, action.undoAction, action.properties);
+    let result = composed[0];
+    if (composed.length > 1) {
+      result = new Operation();
+      for (const op of composed) {
+        for (const action of op.actions) {
+          result.add(action.redoAction, action.undoAction, action.properties);
+        }
       }
     }
-    this._undoOperations.push(merged);
+    this._undoOperations.push(result);
+    this._onSessionEnded(composed, result);
     this.reset();
   }
 
@@ -448,15 +497,16 @@ export class Tracker implements ITrackerContext {
     this._currentSession = undefined;
 
     const toRevert = this._undoOperations.splice(this._composingBaseIndex);
-    this._redoOperations.splice(this._composingRedoLength!);
+    this._onOperationsDropped(this._redoOperations.splice(this._composingRedoLength!));
     this._composingBaseIndex = undefined;
     this._composingRedoLength = undefined;
 
-    this.withTrackingSuppressed(() => {
+    this.replay(() => {
       for (let i = toRevert.length - 1; i >= 0; i--) {
         toRevert[i].undo();
       }
     });
+    this._onSessionRolledBack(toRevert);
 
     this.reset();
     this.revalidate();
@@ -472,10 +522,9 @@ export class Tracker implements ITrackerContext {
     }
 
     const undoOperation = this._undoOperations.pop()!;
-    this._isReplaying = true;
-    this.withTrackingSuppressed(() => undoOperation.undo());
-    this._isReplaying = false;
+    this.replay(() => undoOperation.undo());
     this._redoOperations.push(undoOperation);
+    this._onReplayed(undoOperation);
 
     this.reset();
     this.revalidate();
@@ -489,10 +538,9 @@ export class Tracker implements ITrackerContext {
     }
 
     const redoOperation = this._redoOperations.pop()!;
-    this._isReplaying = true;
-    this.withTrackingSuppressed(() => redoOperation.redo());
-    this._isReplaying = false;
+    this.replay(() => redoOperation.redo());
     this._undoOperations.push(redoOperation);
+    this._onReplayed(redoOperation);
 
     this.reset();
     this.revalidate();

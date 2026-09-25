@@ -17,10 +17,6 @@ const reverseDeps = new Map<
 >();
 
 export const DependencyTracker = {
-  isActive(): boolean {
-    return collector !== null;
-  },
-
   record(object: object, property: string): void {
     if (!collector) return;
     let props = collector.get(object);
