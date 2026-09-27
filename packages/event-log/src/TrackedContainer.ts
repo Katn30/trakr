@@ -1,6 +1,6 @@
 import { TrackedObject } from "./TrackedObject";
 import type { EventTrackedCollection } from "./EventTrackedCollection";
-import { ContainerChildren } from "@chronicle/core";
+import { ContainerChildren } from "@katn30/chronicle-core";
 
 // An EventLog collection holds TrackedObjects or plain values: this tells them apart.
 const isModel = (item: unknown): item is TrackedObject => item instanceof TrackedObject;

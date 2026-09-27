@@ -1,4 +1,4 @@
-import { TrackerSession } from "@chronicle/core";
+import { TrackerSession } from "@katn30/chronicle-core";
 import { Entity } from "./Entity";
 import { State } from "./State";
 

@@ -1,16 +1,16 @@
-# @chronicle/unit-of-work
+# @katn30/chronicle-unit-of-work
 
 A **Unit of Work** for TypeScript models: chronicle tracks which objects are new,
 changed or removed, with undo/redo and validation, and saves them together with
 one call.
 
 ```bash
-npm install @chronicle/unit-of-work
+npm install @katn30/chronicle-unit-of-work
 ```
 
 Requires TypeScript 5 or later, with `experimentalDecorators` **not** set
 (chronicle uses the standard decorators). Everything is imported from this
-package; `@chronicle/core` is installed with it.
+package; `@katn30/chronicle-core` is installed with it.
 
 The shared concepts (models, `construct()` / `new()`, `@Tracked`, validation,
 hooks and events, collections, containers, undo/redo and the history) are
@@ -22,7 +22,7 @@ This page covers what is specific to a unit of work.
 ## A model
 
 ```ts
-import { UnitOfWork, Entity, EntityContainer, TrackedCollection, Tracked, AutoId } from "@chronicle/unit-of-work";
+import { UnitOfWork, Entity, EntityContainer, TrackedCollection, Tracked, AutoId } from "@katn30/chronicle-unit-of-work";
 
 class Line extends Entity {
   @AutoId id: number | null = null;

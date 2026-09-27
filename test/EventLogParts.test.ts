@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   EventLog, TrackedObject, TrackedContainer, EventTracked, EventTrackedCollection, Id, AutoId,
   type CommitBatch,
-} from "@chronicle/event-log";
+} from "@katn30/chronicle-event-log";
 import { pendingEvents, pendingIds, events } from "./eventHelpers";
 
 // An aggregate split into parts: Issue → main, analysis (→ subs), comments.

@@ -2,10 +2,10 @@ import { describe, it, expect } from "vitest";
 import {
   UnitOfWork, Entity, EntityContainer, TrackedCollection, Tracked, AutoId, State,
   type CommitBatch as UowBatch,
-} from "@chronicle/unit-of-work";
+} from "@katn30/chronicle-unit-of-work";
 import {
   EventLog, TrackedObject, TrackedContainer, EventTracked, EventTrackedCollection, Id, AutoId as EAutoId,
-} from "@chronicle/event-log";
+} from "@katn30/chronicle-event-log";
 import { emitted, pendingIds } from "./eventHelpers";
 
 // ---------------------------------------------------------------------------- UnitOfWork models

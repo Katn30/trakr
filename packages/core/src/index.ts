@@ -1,4 +1,4 @@
-// @chronicle/core — the shared core of @chronicle/unit-of-work and @chronicle/event-log.
+// @katn30/chronicle-core — the shared core of @katn30/chronicle-unit-of-work and @katn30/chronicle-event-log.
 export { Tracker } from './Tracker.js'
 export { TrackedObjectBase } from './TrackedObjectBase.js'
 export type { TrackedPropertyChanged } from './TrackedObjectBase.js'
@@ -10,7 +10,7 @@ export type { HistoryEntry } from './HistoryEntry.js'
 export { AutoId, Id, getIdentity, getIdentityObject, getIdentityProperties } from './ExternallyAssigned.js'
 export type { IdAssignment } from './ExternallyAssigned.js'
 
-// ---- Internals shared with @chronicle/unit-of-work and @chronicle/event-log.
+// ---- Internals shared with @katn30/chronicle-unit-of-work and @katn30/chronicle-event-log.
 // Not part of the public API: they may change in any release. Applications
 // import from one of those two packages, which re-export only the public API.
 // TypedEvent is public as a type (subscribe/unsubscribe); constructing and emitting is internal.

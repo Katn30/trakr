@@ -1,10 +1,10 @@
 import type { UnitOfWork } from "./UnitOfWork";
-import { TrackedObjectBase } from "@chronicle/core";
+import { TrackedObjectBase } from "@katn30/chronicle-core";
 import { State } from "./State";
-import { OperationProperties } from "@chronicle/core";
-import { PropertyType } from "@chronicle/core";
-import { IdAssignment, getAutoIdProperty, writeProperty } from "@chronicle/core";
-import type { ContainerChildren } from "@chronicle/core";
+import { OperationProperties } from "@katn30/chronicle-core";
+import { PropertyType } from "@katn30/chronicle-core";
+import { IdAssignment, getAutoIdProperty, writeProperty } from "@katn30/chronicle-core";
+import type { ContainerChildren } from "@katn30/chronicle-core";
 
 /** Where an object stands in the model. */
 type Membership =

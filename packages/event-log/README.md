@@ -1,4 +1,4 @@
-# @chronicle/event-log
+# @katn30/chronicle-event-log
 
 An **event log** for TypeScript models: every change is recorded as an event,
 with undo/redo and validation, and `commit` sends what the server does not have
@@ -6,12 +6,12 @@ yet. For event-sourced backends, and for backends that merge change sets into
 what they already store.
 
 ```bash
-npm install @chronicle/event-log
+npm install @katn30/chronicle-event-log
 ```
 
 Requires TypeScript 5 or later, with `experimentalDecorators` **not** set
 (chronicle uses the standard decorators). Everything is imported from this
-package; `@chronicle/core` is installed with it.
+package; `@katn30/chronicle-core` is installed with it.
 
 The shared concepts (models, `construct()` / `new()`, validation, hooks and
 events, containers, undo/redo and the history) are described in the
@@ -23,7 +23,7 @@ This page covers what is specific to an event log.
 ## A model
 
 ```ts
-import { EventLog, TrackedObject, TrackedContainer, EventTracked, EventTrackedCollection, AutoId } from "@chronicle/event-log";
+import { EventLog, TrackedObject, TrackedContainer, EventTracked, EventTrackedCollection, AutoId } from "@katn30/chronicle-event-log";
 
 class Task extends TrackedObject {
   @AutoId id: number | null = null;

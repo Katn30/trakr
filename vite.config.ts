@@ -35,9 +35,9 @@ export default defineConfig({
     // Tests run against the sources: each package name resolves to its src/index.ts.
     resolve: {
         alias: [
-            { find: /^@chronicle\/core$/, replacement: source('core') },
-            { find: /^@chronicle\/unit-of-work$/, replacement: source('unit-of-work') },
-            { find: /^@chronicle\/event-log$/, replacement: source('event-log') },
+            { find: /^@katn30\/chronicle-core$/, replacement: source('core') },
+            { find: /^@katn30\/chronicle-unit-of-work$/, replacement: source('unit-of-work') },
+            { find: /^@katn30\/chronicle-event-log$/, replacement: source('event-log') },
         ],
     },
     test: {

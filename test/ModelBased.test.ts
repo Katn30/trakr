@@ -9,11 +9,11 @@
  * A failure reports the seed and the steps, so it can be replayed.
  */
 import { describe, it, expect } from "vitest";
-import { UnitOfWork, Entity, EntityContainer, TrackedCollection, Tracked, AutoId, type CommitBatch as UowBatch } from "@chronicle/unit-of-work";
+import { UnitOfWork, Entity, EntityContainer, TrackedCollection, Tracked, AutoId, type CommitBatch as UowBatch } from "@katn30/chronicle-unit-of-work";
 import {
   EventLog, TrackedObject, TrackedContainer, EventTracked, EventTrackedCollection, Id, AutoId as EAutoId,
   type CommitBatch as EventBatch, type CommitMode,
-} from "@chronicle/event-log";
+} from "@katn30/chronicle-event-log";
 
 // ---------------------------------------------------------------------------- deterministic randomness
 

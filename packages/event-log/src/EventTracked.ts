@@ -1,6 +1,6 @@
 import { TrackedObject } from "./TrackedObject";
-import { trackedImplementation } from "@chronicle/core";
-import type { ChangeHooks, PropertyValidator } from "@chronicle/core";
+import { trackedImplementation } from "@katn30/chronicle-core";
+import type { ChangeHooks, PropertyValidator } from "@katn30/chronicle-core";
 import {
   registerEventProperty,
   ensureEventStateSubscription,

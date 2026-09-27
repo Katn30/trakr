@@ -1,7 +1,7 @@
-# @chronicle/core
+# @katn30/chronicle-core
 
-The shared core of [`@chronicle/unit-of-work`](https://github.com/Katn30/chronicle/tree/main/packages/unit-of-work) and
-[`@chronicle/event-log`](https://github.com/Katn30/chronicle/tree/main/packages/event-log): models, tracked properties and
+The shared core of [`@katn30/chronicle-unit-of-work`](https://github.com/Katn30/chronicle/tree/main/packages/unit-of-work) and
+[`@katn30/chronicle-event-log`](https://github.com/Katn30/chronicle/tree/main/packages/event-log): models, tracked properties and
 collections, validation, undo/redo and the history.
 
 **Applications don't use this package directly.** Install one of the two
@@ -9,7 +9,7 @@ flavours: each one depends on this package and re-exports its public API, so
 everything is imported from the flavour.
 
 ```bash
-npm install @chronicle/unit-of-work     # or: npm install @chronicle/event-log
+npm install @katn30/chronicle-unit-of-work     # or: npm install @katn30/chronicle-event-log
 ```
 
 The concepts it provides (models, `construct()` / `new()`, `@Tracked`,

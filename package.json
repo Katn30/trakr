@@ -2,7 +2,7 @@
   "name": "chronicle",
   "version": "1.0.0",
   "private": true,
-  "description": "Monorepo of @chronicle/core, @chronicle/unit-of-work and @chronicle/event-log.",
+  "description": "Monorepo of @katn30/chronicle-core, @katn30/chronicle-unit-of-work and @katn30/chronicle-event-log.",
   "type": "module",
   "workspaces": [
     "packages/core",
@@ -10,7 +10,7 @@
     "packages/event-log"
   ],
   "scripts": {
-    "build": "npm run build -w @chronicle/core && npm run build -w @chronicle/unit-of-work -w @chronicle/event-log",
+    "build": "npm run build -w @katn30/chronicle-core && npm run build -w @katn30/chronicle-unit-of-work -w @katn30/chronicle-event-log",
     "typecheck": "tsc -p tsconfig.test.json",
     "test": "npm run typecheck && vitest run",
     "test:watch": "vitest",

@@ -1,9 +1,9 @@
-import { Tracker } from "@chronicle/core";
-import { Operation } from "@chronicle/core";
-import { CollectionUtilities } from "@chronicle/core";
-import { IdAssignment } from "@chronicle/core";
+import { Tracker } from "@katn30/chronicle-core";
+import { Operation } from "@katn30/chronicle-core";
+import { CollectionUtilities } from "@katn30/chronicle-core";
+import { IdAssignment } from "@katn30/chronicle-core";
 import { State } from "./State";
-import type { TrackedCollectionBase, HistoryEntry, PropertyScope, ITracked } from "@chronicle/core";
+import type { TrackedCollectionBase, HistoryEntry, PropertyScope, ITracked } from "@katn30/chronicle-core";
 import { Entity } from "./Entity";
 import { UnitOfWorkSession } from "./UnitOfWorkSession";
 

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   UnitOfWork, Entity, TrackedCollection, Tracked, AutoId, State,
   type CommitBatch, type SaveFunction,
-} from "@chronicle/unit-of-work";
+} from "@katn30/chronicle-unit-of-work";
 
 class Line extends Entity {
   @AutoId id: number | null = null;

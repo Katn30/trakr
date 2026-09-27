@@ -1,6 +1,6 @@
 import type { EventLog } from "./EventLog";
-import { TrackedCollectionBase } from "@chronicle/core";
-import type { CollectionValidator, ContainerChildren, TrackedObjectBase } from "@chronicle/core";
+import { TrackedCollectionBase } from "@katn30/chronicle-core";
+import type { CollectionValidator, ContainerChildren, TrackedObjectBase } from "@katn30/chronicle-core";
 import { TrackedObject } from "./TrackedObject";
 import {
   recordItemOrigin,
@@ -8,14 +8,14 @@ import {
   recordReplayEffect,
   propertyPayload,
 } from "./EventRegistry";
-import { OperationProperties } from "@chronicle/core";
-import { PropertyType } from "@chronicle/core";
+import { OperationProperties } from "@katn30/chronicle-core";
+import { PropertyType } from "@katn30/chronicle-core";
 import {
   getIdentityProperties,
   getIdentityObject,
   getAutoIdProperty,
   readProperty,
-} from "@chronicle/core";
+} from "@katn30/chronicle-core";
 import { getEventMetadata } from "./EventRegistry";
 
 export type CollectionOpKind = "add" | "remove" | "change";

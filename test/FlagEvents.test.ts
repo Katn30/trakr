@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { UnitOfWork, Entity, Tracked } from "@chronicle/unit-of-work";
-import { EventLog, TrackedObject, EventTracked, Id } from "@chronicle/event-log";
+import { UnitOfWork, Entity, Tracked } from "@katn30/chronicle-unit-of-work";
+import { EventLog, TrackedObject, EventTracked, Id } from "@katn30/chronicle-event-log";
 
 class Note extends Entity {
   @Tracked() accessor title: string = "";

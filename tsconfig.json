@@ -5,9 +5,9 @@
     "rootDir": ".",
     "baseUrl": ".",
     "paths": {
-      "@chronicle/core": ["packages/core/src/index.ts"],
-      "@chronicle/unit-of-work": ["packages/unit-of-work/src/index.ts"],
-      "@chronicle/event-log": ["packages/event-log/src/index.ts"]
+      "@katn30/chronicle-core": ["packages/core/src/index.ts"],
+      "@katn30/chronicle-unit-of-work": ["packages/unit-of-work/src/index.ts"],
+      "@katn30/chronicle-event-log": ["packages/event-log/src/index.ts"]
     }
   },
   "include": ["packages/*/src"],

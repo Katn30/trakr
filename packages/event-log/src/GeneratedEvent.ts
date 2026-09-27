@@ -1,4 +1,4 @@
-import type { HistoryEntry } from "@chronicle/core";
+import type { HistoryEntry } from "@katn30/chronicle-core";
 
 /**
  * The pending changes of one root of the model:

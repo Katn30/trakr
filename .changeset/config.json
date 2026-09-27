@@ -2,7 +2,7 @@
   "$schema": "https://unpkg.com/@changesets/config@4.0.1/schema.json",
   "changelog": "@changesets/cli/changelog",
   "commit": false,
-  "fixed": [["@chronicle/core", "@chronicle/unit-of-work", "@chronicle/event-log"]],
+  "fixed": [["@katn30/chronicle-core", "@katn30/chronicle-unit-of-work", "@katn30/chronicle-event-log"]],
   "linked": [],
   "access": "public",
   "baseBranch": "main",

@@ -8,15 +8,15 @@ flavours, one per way of saving:
 
 | Package | Saves | Use it when |
 |---|---|---|
-| [`@chronicle/unit-of-work`](packages/unit-of-work/README.md) | the objects to **insert, update and delete** | your backend stores rows or documents: a Save button, or autosave, sends the changed objects |
-| [`@chronicle/event-log`](packages/event-log/README.md) | **events**: what changed, per object | your backend is event-sourced, or merges change sets into what it already has |
+| [`@katn30/chronicle-unit-of-work`](packages/unit-of-work/README.md) | the objects to **insert, update and delete** | your backend stores rows or documents: a Save button, or autosave, sends the changed objects |
+| [`@katn30/chronicle-event-log`](packages/event-log/README.md) | **events**: what changed, per object | your backend is event-sourced, or merges change sets into what it already has |
 
-Both share the same core ([`@chronicle/core`](packages/core/README.md)): models,
+Both share the same core ([`@katn30/chronicle-core`](packages/core/README.md)): models,
 tracked properties and collections, validation, undo/redo and the history.
 An application uses one flavour and imports everything from it.
 
 ```bash
-npm install @chronicle/unit-of-work     # or: npm install @chronicle/event-log
+npm install @katn30/chronicle-unit-of-work     # or: npm install @katn30/chronicle-event-log
 ```
 
 Chronicle uses the standard (TC39) decorators: TypeScript 5 or later, with
@@ -27,7 +27,7 @@ Chronicle uses the standard (TC39) decorators: TypeScript 5 or later, with
 ## A first look
 
 ```ts
-import { UnitOfWork, Entity, Tracked, AutoId } from "@chronicle/unit-of-work";
+import { UnitOfWork, Entity, Tracked, AutoId } from "@katn30/chronicle-unit-of-work";
 
 class Task extends Entity {
   @AutoId id: number | null = null;
@@ -328,7 +328,7 @@ npm run build     # builds packages/*/dist
 - The packages are released together, at the same version, with
   [Changesets](.changeset/README.md): `npx changeset` records a change.
 - `test/Architecture.test.ts` keeps the packages apart: core imports nothing
-  else, and each flavour imports only `@chronicle/core`.
+  else, and each flavour imports only `@katn30/chronicle-core`.
 - `test/types/pairing.ts` is the compile-time contract: every misuse listed
   there must be a type error.
 

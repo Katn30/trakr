@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import * as core from "@chronicle/core";
-import * as unitOfWork from "@chronicle/unit-of-work";
-import * as eventLog from "@chronicle/event-log";
+import * as core from "@katn30/chronicle-core";
+import * as unitOfWork from "@katn30/chronicle-unit-of-work";
+import * as eventLog from "@katn30/chronicle-event-log";
 
 /** Core's public API: what both flavours re-export. */
 const corePublic = [
@@ -20,17 +20,17 @@ const coreInternal = [
 const sorted = (names: string[]) => [...names].sort();
 
 describe("package entry points", () => {
-  it("@chronicle/core: the public API plus the internals the flavours use", () => {
+  it("@katn30/chronicle-core: the public API plus the internals the flavours use", () => {
     expect(Object.keys(core).sort()).toEqual(sorted([...corePublic, ...coreInternal]));
   });
 
-  it("@chronicle/unit-of-work: core's public API plus the unit of work", () => {
+  it("@katn30/chronicle-unit-of-work: core's public API plus the unit of work", () => {
     expect(Object.keys(unitOfWork).sort()).toEqual(sorted([
       ...corePublic, "UnitOfWork", "Entity", "EntityContainer", "State",
     ]));
   });
 
-  it("@chronicle/event-log: core's public API plus the event log", () => {
+  it("@katn30/chronicle-event-log: core's public API plus the event log", () => {
     expect(Object.keys(eventLog).sort()).toEqual(sorted([
       ...corePublic, "EventLog", "TrackedObject", "TrackedContainer", "EventTracked", "EventTrackedCollection",
     ]));

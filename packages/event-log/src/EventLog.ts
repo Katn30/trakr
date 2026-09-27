@@ -1,7 +1,7 @@
-import { Tracker, TrackerSession } from "@chronicle/core";
-import type { PropertyScope } from "@chronicle/core";
+import { Tracker, TrackerSession } from "@katn30/chronicle-core";
+import type { PropertyScope } from "@katn30/chronicle-core";
 import { TrackedObject } from "./TrackedObject";
-import { Operation } from "@chronicle/core";
+import { Operation } from "@katn30/chronicle-core";
 import {
   IdAssignment,
   getAutoIdProperty,
@@ -10,7 +10,7 @@ import {
   getIdentityProperties,
   readProperty,
   writeProperty,
-} from "@chronicle/core";
+} from "@katn30/chronicle-core";
 import { CommitBatch, CommitOptions, EventEntry, EventState, GeneratedEvent, SaveFunction, TrackedEvent } from "./GeneratedEvent";
 import { CollectionOp, EventTrackedCollection } from "./EventTrackedCollection";
 import {

@@ -1,11 +1,11 @@
-// The public API of @chronicle/core, so applications import everything from this package.
+// The public API of @katn30/chronicle-core, so applications import everything from this package.
 export {
   Tracker, TrackedObjectBase, Tracked, TrackedCollection, TrackedCollectionChanged,
   AutoId, Id, getIdentity, getIdentityObject, getIdentityProperties,
-} from '@chronicle/core'
+} from '@katn30/chronicle-core'
 export type {
   TrackedPropertyChanged, ChangeHook, ChangeHooks, PropertyValidator, TrackedOptions, ITracked, IdAssignment, TypedEvent, HistoryEntry,
-} from '@chronicle/core'
+} from '@katn30/chronicle-core'
 
 export { UnitOfWork } from './UnitOfWork.js'
 export type { CommitBatch, SaveFunction } from './UnitOfWork.js'

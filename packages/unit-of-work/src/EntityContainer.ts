@@ -1,6 +1,6 @@
 import { Entity } from "./Entity";
-import { TrackedCollection } from "@chronicle/core";
-import { ContainerChildren } from "@chronicle/core";
+import { TrackedCollection } from "@katn30/chronicle-core";
+import { ContainerChildren } from "@katn30/chronicle-core";
 
 // A UnitOfWork collection holds Entities or plain values: this tells them apart.
 const isEntity = (item: unknown): item is Entity => item instanceof Entity;

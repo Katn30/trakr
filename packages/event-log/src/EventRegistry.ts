@@ -1,9 +1,9 @@
 import { TrackedObject } from "./TrackedObject";
 import type { EventTrackedCollection } from "./EventTrackedCollection";
-import type { Tracker } from "@chronicle/core";
-import { OperationProperties } from "@chronicle/core";
-import { PropertyType } from "@chronicle/core";
-import { getAutoIdProperty, getIdentityProperties, ClassMetadata, readProperty } from "@chronicle/core";
+import type { Tracker } from "@katn30/chronicle-core";
+import { OperationProperties } from "@katn30/chronicle-core";
+import { PropertyType } from "@katn30/chronicle-core";
+import { getAutoIdProperty, getIdentityProperties, ClassMetadata, readProperty } from "@katn30/chronicle-core";
 
 
 /**

@@ -6,8 +6,8 @@ import * as fs from "node:fs";
  * Three packages: a shared core and two independent flavours. These rules keep
  * them apart, so each flavour ships and installs on its own:
  *   core          → imports nothing from the other packages
- *   unit-of-work  → imports @chronicle/core, never @chronicle/event-log
- *   event-log     → imports @chronicle/core, never @chronicle/unit-of-work
+ *   unit-of-work  → imports @katn30/chronicle-core, never @katn30/chronicle-event-log
+ *   event-log     → imports @katn30/chronicle-core, never @katn30/chronicle-unit-of-work
  * and no package reaches into another's files with a relative path.
  */
 const root = path.resolve(__dirname, "..");
@@ -16,8 +16,8 @@ type Pkg = (typeof packages)[number];
 
 const allowedPackages: Record<Pkg, string[]> = {
   "core": [],
-  "unit-of-work": ["@chronicle/core"],
-  "event-log": ["@chronicle/core"],
+  "unit-of-work": ["@katn30/chronicle-core"],
+  "event-log": ["@katn30/chronicle-core"],
 };
 
 function importsOf(file: string): string[] {
@@ -32,7 +32,7 @@ function check(pkg: Pkg, file: string, specifier: string): string | undefined {
     const own = path.join(root, "packages", pkg, "src");
     return target.startsWith(own + path.sep) ? undefined : `relative import leaves the package: ${specifier}`;
   }
-  if (specifier.startsWith("@chronicle/")) {
+  if (specifier.startsWith("@katn30/chronicle-")) {
     return allowedPackages[pkg].includes(specifier) ? undefined : `imports ${specifier}`;
   }
   return undefined; // third-party / node built-ins
@@ -56,9 +56,9 @@ describe("architecture: core, unit-of-work and event-log stay separate", () => {
       expect(violations).toEqual([]);
     });
 
-    it(`${pkg} declares @chronicle dependencies only as peers`, () => {
+    it(`${pkg} declares chronicle dependencies only as peers`, () => {
       const manifest = JSON.parse(fs.readFileSync(path.join(root, "packages", pkg, "package.json"), "utf8"));
-      expect(Object.keys(manifest.dependencies ?? {}).filter((d) => d.startsWith("@chronicle/"))).toEqual([]);
+      expect(Object.keys(manifest.dependencies ?? {}).filter((d) => d.startsWith("@katn30/chronicle-"))).toEqual([]);
       expect(Object.keys(manifest.peerDependencies ?? {})).toEqual(allowedPackages[pkg]);
     });
   }
@@ -70,10 +70,10 @@ describe("architecture: core, unit-of-work and event-log stay separate", () => {
 
   it("the rule itself catches violations", () => {
     const file = path.join(root, "packages", "unit-of-work", "src", "Probe.ts");
-    expect(check("unit-of-work", file, "@chronicle/event-log")).toBe("imports @chronicle/event-log");
+    expect(check("unit-of-work", file, "@katn30/chronicle-event-log")).toBe("imports @katn30/chronicle-event-log");
     expect(check("unit-of-work", file, "../../core/src/Tracker")).toMatch(/leaves the package/);
     expect(check("unit-of-work", file, "./Entity")).toBeUndefined();
-    expect(check("unit-of-work", file, "@chronicle/core")).toBeUndefined();
+    expect(check("unit-of-work", file, "@katn30/chronicle-core")).toBeUndefined();
     expect(check("core", file, "typescript")).toBeUndefined();
   });
 });

@@ -1,12 +1,12 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   UnitOfWork, Entity, TrackedCollection, Tracked,
-} from "@chronicle/unit-of-work";
+} from "@katn30/chronicle-unit-of-work";
 import {
   EventLog, TrackedObject, EventTracked, EventTrackedCollection, Id, AutoId,
   type CommitBatch,
-} from "@chronicle/event-log";
-import { Tracked as CoreTracked, TrackedCollection as CoreCollection } from "@chronicle/core";
+} from "@katn30/chronicle-event-log";
+import { Tracked as CoreTracked, TrackedCollection as CoreCollection } from "@katn30/chronicle-core";
 
 // ---------------------------------------------------------------------------- models
 

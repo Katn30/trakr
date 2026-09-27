@@ -1,8 +1,8 @@
 import type { EventLog } from "./EventLog";
-import { TrackedObjectBase } from "@chronicle/core";
-import type { ContainerChildren } from "@chronicle/core";
+import { TrackedObjectBase } from "@katn30/chronicle-core";
+import type { ContainerChildren } from "@katn30/chronicle-core";
 
-export type { TrackedPropertyChanged } from "@chronicle/core";
+export type { TrackedPropertyChanged } from "@katn30/chronicle-core";
 
 /**
  * Base class for models tracked by an {@link EventLog}. It carries no

@@ -1,5 +1,5 @@
 {
-  "name": "@chronicle/event-log",
+  "name": "@katn30/chronicle-event-log",
   "version": "1.0.0",
   "description": "Event log for TypeScript models: records every change as an event, with undo/redo and validation, and saves them as one batch.",
   "type": "module",
@@ -48,9 +48,9 @@
     "dev": "tsup --watch"
   },
   "peerDependencies": {
-    "@chronicle/core": "^1.0.0"
+    "@katn30/chronicle-core": "^1.0.0"
   },
   "devDependencies": {
-    "@chronicle/core": "1.0.0"
+    "@katn30/chronicle-core": "1.0.0"
   }
 }

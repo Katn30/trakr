@@ -2,11 +2,11 @@ import { describe, it, expect } from "vitest";
 import {
   UnitOfWork, Entity, EntityContainer, TrackedCollection, Tracked, AutoId, State,
   type CommitBatch as UowBatch,
-} from "@chronicle/unit-of-work";
+} from "@katn30/chronicle-unit-of-work";
 import {
   EventLog, TrackedObject, TrackedContainer, EventTracked, EventTrackedCollection, AutoId as EAutoId,
   type CommitBatch as EventBatch,
-} from "@chronicle/event-log";
+} from "@katn30/chronicle-event-log";
 
 // ---------------------------------------------------------------------------- a unit of work, end to end
 
