@@ -1,15 +1,16 @@
 import { describe, it, expect } from "vitest";
-import { DirtyTrackedObject } from "../src/DirtyTrackedObject";
-import { Tracker } from "../src/Tracker";
-import { DirtyTracker } from "../src/DirtyTracker";
-import { Tracked } from "../src/Tracked";
-import { TrackedCollection } from "../src/TrackedCollection";
-import { State } from "../src/State";
-import { Operation } from "../src/Operation";
+import { Entity } from "../packages/unit-of-work/src/Entity";
+import { Tracker } from "../packages/core/src/Tracker";
+import { UnitOfWork } from "../packages/unit-of-work/src/UnitOfWork";
+import { Tracked } from "../packages/core/src/Tracked";
+import { TrackedCollection } from "../packages/core/src/TrackedCollection";
+import { State } from "../packages/unit-of-work/src/State";
+import { Operation } from "../packages/core/src/Operation";
+import { deletedObjects } from "./uowHelpers";
 
 // ---- Models ----
 
-class InvoiceModel extends DirtyTrackedObject {
+class InvoiceModel extends Entity {
   @Tracked()
   accessor status: string = "";
 
@@ -19,7 +20,7 @@ class InvoiceModel extends DirtyTrackedObject {
   readonly lines: TrackedCollection<string>;
 
   constructor(
-    tracker: DirtyTracker,
+    tracker: UnitOfWork,
     initialStatus = "",
     initialLines: string[] = [],
     initialNote = "",
@@ -31,7 +32,7 @@ class InvoiceModel extends DirtyTrackedObject {
   }
 }
 
-class PersonModel extends DirtyTrackedObject {
+class PersonModel extends Entity {
   private _name: string = "";
 
   get name(): string {
@@ -43,38 +44,38 @@ class PersonModel extends DirtyTrackedObject {
     this._name = value;
   }
 
-  constructor(tracker: DirtyTracker, initialName = "") {
+  constructor(tracker: UnitOfWork, initialName = "") {
     super(tracker);
     this.name = initialName;
   }
 }
 
-class ValidatedModel extends DirtyTrackedObject {
+class ValidatedModel extends Entity {
   @Tracked((_, v: string) => (!v ? "Required" : undefined))
   accessor status: string = "initial";
 
   @Tracked()
   accessor note: string = "";
 
-  constructor(tracker: DirtyTracker) {
+  constructor(tracker: UnitOfWork) {
     super(tracker);
   }
 }
 
-class RequiredNameModel extends DirtyTrackedObject {
+class RequiredNameModel extends Entity {
   @Tracked((_, v: string) => (!v ? "Name is required" : undefined))
   accessor name: string = ""; // empty default → always invalid on construction
 
-  constructor(tracker: DirtyTracker) {
+  constructor(tracker: UnitOfWork) {
     super(tracker);
   }
 }
 
 // ---- Sequential changes ----
 
-describe("DirtyTrackedObject – sequential changes create separate undo steps", () => {
+describe("Entity – sequential changes create separate undo steps", () => {
   it("two sequential property changes create two undo steps", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const invoice = tracker.construct(() => new InvoiceModel(tracker));
 
     invoice.status = "active";
@@ -89,9 +90,9 @@ describe("DirtyTrackedObject – sequential changes create separate undo steps",
   });
 
   it("a property change and a collection mutation create two undo steps", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const invoice = tracker.construct(() => new InvoiceModel(tracker, "active", ["line-1"]));
-    tracker.onCommit();
+    tracker._onCommit();
 
     invoice.status = "void";
     invoice.lines.clear();
@@ -106,9 +107,9 @@ describe("DirtyTrackedObject – sequential changes create separate undo steps",
   });
 
   it("two sequential collection mutations create two undo steps", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const invoice = tracker.construct(() => new InvoiceModel(tracker, "", ["a", "b"]));
-    tracker.onCommit();
+    tracker._onCommit();
 
     invoice.lines.push("c");
     invoice.lines.push("d");
@@ -124,9 +125,9 @@ describe("DirtyTrackedObject – sequential changes create separate undo steps",
 
 // ---- Tracking suppression ----
 
-describe("DirtyTrackedObject – tracking suppression", () => {
+describe("Entity – tracking suppression", () => {
   it("changes inside trackingSuppressed do not create undo entries", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const invoice = tracker.construct(() => new InvoiceModel(tracker));
 
     tracker.withTrackingSuppressed(() => {
@@ -138,7 +139,7 @@ describe("DirtyTrackedObject – tracking suppression", () => {
   });
 
   it("changes inside trackingSuppressed do not mark the tracker dirty", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const invoice = tracker.construct(() => new InvoiceModel(tracker));
 
     tracker.withTrackingSuppressed(() => {
@@ -149,7 +150,7 @@ describe("DirtyTrackedObject – tracking suppression", () => {
   });
 
   it("values are still applied inside trackingSuppressed", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const invoice = tracker.construct(() => new InvoiceModel(tracker));
 
     tracker.withTrackingSuppressed(() => {
@@ -162,7 +163,7 @@ describe("DirtyTrackedObject – tracking suppression", () => {
   });
 
   it("changes after trackingSuppressed are tracked normally", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const invoice = tracker.construct(() => new InvoiceModel(tracker));
 
     tracker.withTrackingSuppressed(() => {
@@ -174,29 +175,15 @@ describe("DirtyTrackedObject – tracking suppression", () => {
     tracker.undo();
     expect(invoice.status).toBe("draft");
   });
-
-  it("beginSuppressTracking / endSuppressTracking behave identically", () => {
-    const tracker = new DirtyTracker();
-    const invoice = tracker.construct(() => new InvoiceModel(tracker));
-
-    tracker.beginSuppressTracking();
-    invoice.status = "draft";
-    invoice.lines.push("line-1");
-    tracker.endSuppressTracking();
-
-    expect(tracker.canUndo).toBe(false);
-    expect(invoice.status).toBe("draft");
-    expect(invoice.lines.length).toBe(1);
-  });
 });
 
 // ---- @Tracked on get/set accessor ----
 
-describe("DirtyTrackedObject – @Tracked on get/set accessor", () => {
+describe("Entity – @Tracked on get/set accessor", () => {
   it("change is tracked and undoable", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker, "Alice"));
-    tracker.onCommit();
+    tracker._onCommit();
 
     person.name = "Bob";
 
@@ -206,7 +193,7 @@ describe("DirtyTrackedObject – @Tracked on get/set accessor", () => {
   });
 
   it("undo then redo restores the change", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
 
     person.name = "Bob";
@@ -217,9 +204,9 @@ describe("DirtyTrackedObject – @Tracked on get/set accessor", () => {
   });
 
   it("setting the same value does not create an undo step", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker, "Alice"));
-    tracker.onCommit();
+    tracker._onCommit();
 
     person.name = "Alice";
 
@@ -228,7 +215,7 @@ describe("DirtyTrackedObject – @Tracked on get/set accessor", () => {
   });
 
   it("changes inside trackingSuppressed are not tracked", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
 
     tracker.withTrackingSuppressed(() => {
@@ -242,7 +229,7 @@ describe("DirtyTrackedObject – @Tracked on get/set accessor", () => {
 
 // ---- coalesceWithin on explicit setter ----
 
-class CoalesceSetterModel extends DirtyTrackedObject {
+class CoalesceSetterModel extends Entity {
   private _note: string = "";
 
   get note(): string { return this._note; }
@@ -250,14 +237,14 @@ class CoalesceSetterModel extends DirtyTrackedObject {
   @Tracked(undefined, undefined, { coalesceWithin: 5000 })
   set note(value: string) { this._note = value; }
 
-  constructor(tracker: DirtyTracker) {
+  constructor(tracker: UnitOfWork) {
     super(tracker);
   }
 }
 
-describe("DirtyTrackedObject – coalesceWithin on explicit get/set pair", () => {
+describe("Entity – coalesceWithin on explicit get/set pair", () => {
   it("rapid writes to the same setter merge into one undo step", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new CoalesceSetterModel(tracker));
 
     model.note = "a";
@@ -271,9 +258,9 @@ describe("DirtyTrackedObject – coalesceWithin on explicit get/set pair", () =>
 
 // ---- Events ----
 
-describe("DirtyTrackedObject – isDirtyChanged", () => {
+describe("Entity – isDirtyChanged", () => {
   it("fires with true when the tracker becomes dirty", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const invoice = tracker.construct(() => new InvoiceModel(tracker));
     const calls: boolean[] = [];
     tracker.isDirtyChanged.subscribe((v) => calls.push(v));
@@ -284,7 +271,7 @@ describe("DirtyTrackedObject – isDirtyChanged", () => {
   });
 
   it("fires with false when the tracker becomes clean", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const invoice = tracker.construct(() => new InvoiceModel(tracker));
     invoice.status = "draft";
     const calls: boolean[] = [];
@@ -296,7 +283,7 @@ describe("DirtyTrackedObject – isDirtyChanged", () => {
   });
 
   it("does not fire when isDirty is already true", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const invoice = tracker.construct(() => new InvoiceModel(tracker));
     invoice.status = "draft";
     const calls: boolean[] = [];
@@ -308,7 +295,7 @@ describe("DirtyTrackedObject – isDirtyChanged", () => {
   });
 
   it("does not fire when isDirty is already false", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     tracker.construct(() => new InvoiceModel(tracker));
     const calls: boolean[] = [];
     tracker.isDirtyChanged.subscribe((v) => calls.push(v));
@@ -319,11 +306,11 @@ describe("DirtyTrackedObject – isDirtyChanged", () => {
   });
 });
 
-describe("DirtyTrackedObject – isValidChanged", () => {
+describe("Entity – isValidChanged", () => {
   it("fires with false when the tracker becomes invalid", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new ValidatedModel(tracker));
-    tracker.onCommit();
+    tracker._onCommit();
     const calls: boolean[] = [];
     tracker.isValidChanged.subscribe((v) => calls.push(v));
 
@@ -333,7 +320,7 @@ describe("DirtyTrackedObject – isValidChanged", () => {
   });
 
   it("fires with true when the tracker becomes valid again", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new ValidatedModel(tracker));
     model.status = "";
     const calls: boolean[] = [];
@@ -345,7 +332,7 @@ describe("DirtyTrackedObject – isValidChanged", () => {
   });
 
   it("does not fire when isValid is already false", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new ValidatedModel(tracker));
     model.status = "";
     const calls: boolean[] = [];
@@ -357,7 +344,7 @@ describe("DirtyTrackedObject – isValidChanged", () => {
   });
 
   it("does not fire when isValid is already true", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new ValidatedModel(tracker));
     const calls: boolean[] = [];
     tracker.isValidChanged.subscribe((v) => calls.push(v));
@@ -368,9 +355,9 @@ describe("DirtyTrackedObject – isValidChanged", () => {
   });
 });
 
-describe("DirtyTrackedObject – canCommitChanged", () => {
+describe("Entity – canCommitChanged", () => {
   it("fires with true when isDirty becomes true and isValid is already true", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const invoice = tracker.construct(() => new InvoiceModel(tracker));
     const calls: boolean[] = [];
     tracker.canCommitChanged.subscribe((v) => calls.push(v));
@@ -381,7 +368,7 @@ describe("DirtyTrackedObject – canCommitChanged", () => {
   });
 
   it("fires with false when isDirty becomes false", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const invoice = tracker.construct(() => new InvoiceModel(tracker));
     invoice.status = "draft";
     const calls: boolean[] = [];
@@ -393,7 +380,7 @@ describe("DirtyTrackedObject – canCommitChanged", () => {
   });
 
   it("fires with false when isValid becomes false while isDirty is true", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new ValidatedModel(tracker));
     model.status = "active";
     const calls: boolean[] = [];
@@ -405,10 +392,10 @@ describe("DirtyTrackedObject – canCommitChanged", () => {
   });
 
   it("does not fire when isDirty becomes true but isValid is false", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new ValidatedModel(tracker));
     tracker.withTrackingSuppressed(() => { model.status = ""; });
-    tracker.revalidate();
+    tracker._revalidate();
     const calls: boolean[] = [];
     tracker.canCommitChanged.subscribe((v) => calls.push(v));
 
@@ -418,7 +405,7 @@ describe("DirtyTrackedObject – canCommitChanged", () => {
   });
 
   it("does not fire when a second change is made while already dirty and valid", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const invoice = tracker.construct(() => new InvoiceModel(tracker));
     invoice.status = "draft";
     const calls: boolean[] = [];
@@ -430,11 +417,11 @@ describe("DirtyTrackedObject – canCommitChanged", () => {
   });
 });
 
-// ---- DirtyTrackedObject – construct() ----
+// ---- Entity – construct() ----
 
-describe("DirtyTrackedObject – construct()", () => {
+describe("Entity – construct()", () => {
   it("validates all objects and updates tracker.isValid after the lambda", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     expect(tracker.isValid).toBe(true);
 
     tracker.construct(() => new RequiredNameModel(tracker));
@@ -443,7 +430,7 @@ describe("DirtyTrackedObject – construct()", () => {
   });
 
   it("suppresses tracking during construction (canUndo is false)", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
 
     tracker.construct(() => new RequiredNameModel(tracker));
 
@@ -451,22 +438,22 @@ describe("DirtyTrackedObject – construct()", () => {
   });
 
   it("returns the constructed object", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
 
     const model = tracker.construct(() => new RequiredNameModel(tracker));
 
     expect(model).toBeInstanceOf(RequiredNameModel);
-    expect(tracker.trackedObjects).toContain(model);
+    expect(tracker._trackedObjects).toContain(model);
   });
 
   it("throws when constructing outside construct()", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
 
     expect(() => new RequiredNameModel(tracker)).toThrow();
   });
 
   it("handles multiple objects (only one revalidation at the end)", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
 
     const models = tracker.construct(() => {
       const a = new RequiredNameModel(tracker);
@@ -475,33 +462,33 @@ describe("DirtyTrackedObject – construct()", () => {
       return [a, b, c];
     });
 
-    expect(tracker.trackedObjects.length).toBe(3);
+    expect(tracker._trackedObjects.length).toBe(3);
     expect(tracker.isValid).toBe(false);
     expect(tracker.canUndo).toBe(false);
   });
 
   it("isValid correctly reflects validity after construct() with invalid objects", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
 
     tracker.construct(() => new RequiredNameModel(tracker));
     tracker.construct(() => new RequiredNameModel(tracker));
 
     expect(tracker.isValid).toBe(false);
-    expect(tracker.trackedObjects.length).toBe(2);
+    expect(tracker._trackedObjects.length).toBe(2);
   });
 
   it("model.isValid, model.validationMessages, and tracker.isValid are all set after construct() with invalid initial data", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
 
     const model = tracker.construct(() => new RequiredNameModel(tracker));
 
-    expect(model.trakrIsValid).toBe(false);
+    expect(model.chronicleIsValid).toBe(false);
     expect(model.validationMessages.get("name")).toBe("Name is required");
     expect(tracker.isValid).toBe(false);
   });
 
   it("undo push of invalid constructed item removes ghost and restores tracker.isValid", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const items = new TrackedCollection<RequiredNameModel>(tracker);
     const item = tracker.construct(() => new RequiredNameModel(tracker));
     expect(tracker.isValid).toBe(false); // invalid before push (name is empty)
@@ -509,12 +496,12 @@ describe("DirtyTrackedObject – construct()", () => {
     items.push(item);
     tracker.undo();
 
-    expect(tracker.trackedObjects).not.toContain(item);
+    expect(tracker._trackedObjects).not.toContain(item);
     expect(tracker.isValid).toBe(true);
   });
 
   it("redo push of invalid item re-tracks and restores tracker.isValid to false", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const items = new TrackedCollection<RequiredNameModel>(tracker);
     const item = tracker.construct(() => new RequiredNameModel(tracker));
     items.push(item);
@@ -522,43 +509,28 @@ describe("DirtyTrackedObject – construct()", () => {
 
     tracker.redo();
 
-    expect(tracker.trackedObjects).toContain(item);
+    expect(tracker._trackedObjects).toContain(item);
     expect(tracker.isValid).toBe(false); // invalid contribution restored
   });
 });
 
 // ---- Models for the sections below ----
 
-class CoalesceModel extends DirtyTrackedObject {
+class CoalesceModel extends Entity {
   @Tracked(undefined, undefined, { coalesceWithin: 5000 })
   accessor note: string = "";
 
-  constructor(tracker: DirtyTracker) {
+  constructor(tracker: UnitOfWork) {
     super(tracker);
   }
 }
 
-class CapturingModel extends DirtyTrackedObject {
-  capturedOp: Operation | undefined;
-
-  @Tracked()
-  accessor value: number = 0;
-
-  override _onCommitted(lastOp?: Operation): void {
-    super._onCommitted(lastOp);
-    this.capturedOp = lastOp;
-  }
-
-  constructor(tracker: DirtyTracker) {
-    super(tracker);
-  }
-}
 
 // ---- coalesceWithin option ----
 
-describe("DirtyTrackedObject — coalesceWithin option", () => {
+describe("Entity — coalesceWithin option", () => {
   it("two rapid changes to the same property merge into one undo step", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new CoalesceModel(tracker));
 
     model.note = "a";
@@ -570,7 +542,7 @@ describe("DirtyTrackedObject — coalesceWithin option", () => {
   });
 
   it("a property without coalesceWithin never merges — each write is its own undo step", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const invoice = tracker.construct(() => new InvoiceModel(tracker));
 
     // InvoiceModel.status has no coalesceWithin — writes never merge
@@ -587,14 +559,14 @@ describe("DirtyTrackedObject — coalesceWithin option", () => {
 
 // ---- no coalesceWithin: writes never merge ----
 
-class NumModel extends DirtyTrackedObject {
+class NumModel extends Entity {
   @Tracked() accessor qty: number = 0;
-  constructor(t: DirtyTracker) { super(t); }
+  constructor(t: UnitOfWork) { super(t); }
 }
 
-describe("DirtyTrackedObject — without coalesceWithin, writes never merge", () => {
+describe("Entity — without coalesceWithin, writes never merge", () => {
   it("rapid changes to the same string property are separate undo steps", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const invoice = tracker.construct(() => new InvoiceModel(tracker));
 
     invoice.status = "a";
@@ -608,7 +580,7 @@ describe("DirtyTrackedObject — without coalesceWithin, writes never merge", ()
   });
 
   it("rapid changes to the same number property are separate undo steps", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new NumModel(tracker));
 
     model.qty = 1;
@@ -621,190 +593,142 @@ describe("DirtyTrackedObject — without coalesceWithin, writes never merge", ()
   });
 });
 
-// ---- _isInUndoStack ----
+// ---- deletedObjects(Tracker) ----
 
-describe("DirtyTrackedObject — Tracker._isInUndoStack()", () => {
-  it("returns true for an operation that is in the undo stack", () => {
-    const tracker = new DirtyTracker();
-    const model = tracker.construct(() => new CapturingModel(tracker));
-
-    model.value = 5;
-    tracker.onCommit();
-
-    expect(model.capturedOp).toBeDefined();
-    expect(tracker._isInUndoStack(model.capturedOp!)).toBe(true);
-  });
-
-  it("returns false for an operation that has been moved to the redo stack via undo", () => {
-    const tracker = new DirtyTracker();
-    const model = tracker.construct(() => new CapturingModel(tracker));
-
-    model.value = 5;
-    tracker.onCommit();
-    const op = model.capturedOp!;
-
-    tracker.undo(); // moves op to redo stack
-
-    expect(tracker._isInUndoStack(op)).toBe(false);
-  });
-
-  it("returns true again after redo puts the operation back in the undo stack", () => {
-    const tracker = new DirtyTracker();
-    const model = tracker.construct(() => new CapturingModel(tracker));
-
-    model.value = 5;
-    tracker.onCommit();
-    const op = model.capturedOp!;
-
-    tracker.undo();
-    tracker.redo(); // moves op back to undo stack
-
-    expect(tracker._isInUndoStack(op)).toBe(true);
-  });
-
-  it("returns false for an operation that was never added to the undo stack", () => {
-    const tracker = new DirtyTracker();
-    const foreign = new Operation();
-    expect(tracker._isInUndoStack(foreign)).toBe(false);
-  });
-});
-
-// ---- Tracker.deletedObjects ----
-
-class DeletableModel extends DirtyTrackedObject {
+class DeletableModel extends Entity {
   @Tracked()
   accessor detail: DeletableModel | null = null;
 
-  constructor(tracker: DirtyTracker) { super(tracker); }
+  constructor(tracker: UnitOfWork) { super(tracker); }
 }
 
 // ---- Single-property composition lifecycle ----
 
-class LeafModel extends DirtyTrackedObject {
+class LeafModel extends Entity {
   @Tracked((_, v: string) => (!v ? "Required" : undefined))
   accessor name: string = "";
 
-  constructor(tracker: DirtyTracker) { super(tracker); }
+  constructor(tracker: UnitOfWork) { super(tracker); }
 }
 
-class NodeModel extends DirtyTrackedObject {
+class NodeModel extends Entity {
   @Tracked()
   accessor leaf: LeafModel | null = null;
 
-  constructor(tracker: DirtyTracker) { super(tracker); }
+  constructor(tracker: UnitOfWork) { super(tracker); }
 }
 
-describe("Tracker.deletedObjects", () => {
+describe("deletedObjects(Tracker)", () => {
   it("is empty when no objects are deleted", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     tracker.construct(() => new DeletableModel(tracker));
-    expect(tracker.deletedObjects).toHaveLength(0);
+    expect(deletedObjects(tracker)).toHaveLength(0);
   });
 
   it("contains an object removed from a TrackedCollection", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const item = tracker.construct(() => new DeletableModel(tracker));
     tracker.withTrackingSuppressed(() => {});
     const coll = new TrackedCollection<DeletableModel>(tracker, [item]);
     coll.remove(item);
 
-    expect(tracker.deletedObjects).toContain(item);
+    expect(deletedObjects(tracker)).toContain(item);
   });
 
   it("does not contain an item that collapsed Insert → Unchanged on remove", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const items = new TrackedCollection<DeletableModel>(tracker);
     const item = tracker.construct(() => new DeletableModel(tracker));
     items.push(item);
     items.remove(item);
 
-    expect(item.trakrState).toBe(State.Unchanged);
-    expect(tracker.deletedObjects).not.toContain(item);
+    expect(item.chronicleState).toBe(State.Unchanged);
+    expect(deletedObjects(tracker)).not.toContain(item);
   });
 
   it("disappears from deletedObjects after undo of remove", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const item = tracker.construct(() => new DeletableModel(tracker));
     const coll = new TrackedCollection<DeletableModel>(tracker, [item]);
     coll.remove(item);
     tracker.undo();
 
-    expect(tracker.deletedObjects).not.toContain(item);
+    expect(deletedObjects(tracker)).not.toContain(item);
   });
 
   it("reappears in deletedObjects after redo of remove", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const item = tracker.construct(() => new DeletableModel(tracker));
     const coll = new TrackedCollection<DeletableModel>(tracker, [item]);
     coll.remove(item);
     tracker.undo();
     tracker.redo();
 
-    expect(tracker.deletedObjects).toContain(item);
+    expect(deletedObjects(tracker)).toContain(item);
   });
 
   it("is empty after commit of a delete (state → Unchanged)", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const item = tracker.construct(() => new DeletableModel(tracker));
     const coll = new TrackedCollection<DeletableModel>(tracker, [item]);
     coll.remove(item);
-    tracker.onCommit();
+    tracker._onCommit();
 
-    expect(tracker.deletedObjects).not.toContain(item);
+    expect(deletedObjects(tracker)).not.toContain(item);
   });
 
   it("reappears after undoing a committed delete (state → Insert)", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const item = tracker.construct(() => new DeletableModel(tracker));
     const coll = new TrackedCollection<DeletableModel>(tracker, [item]);
     coll.remove(item);
-    tracker.onCommit();
+    tracker._onCommit();
     tracker.undo();
 
     // state is Insert after committed delete undo — not Deleted
-    expect(item.trakrState).toBe(State.Insert);
-    expect(tracker.deletedObjects).not.toContain(item);
+    expect(item.chronicleState).toBe(State.Insert);
+    expect(deletedObjects(tracker)).not.toContain(item);
   });
 
   it("contains an object deleted via a @Tracked composed property set to null", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const parent = tracker.construct(() => new DeletableModel(tracker));
     const child = tracker.construct(() => new DeletableModel(tracker));
     tracker.withTrackingSuppressed(() => { parent.detail = child; });
 
     parent.detail = null; // child → Deleted
 
-    expect(child.trakrState).toBe(State.Deleted);
-    expect(tracker.deletedObjects).toContain(child);
+    expect(child.chronicleState).toBe(State.Deleted);
+    expect(deletedObjects(tracker)).toContain(child);
   });
 
   it("does not contain an object after destroy()", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const item = tracker.construct(() => new DeletableModel(tracker));
     const coll = new TrackedCollection<DeletableModel>(tracker, [item]);
     coll.remove(item);
     item.destroy();
 
-    expect(tracker.deletedObjects).not.toContain(item);
+    expect(deletedObjects(tracker)).not.toContain(item);
   });
 });
 
 // ---- Single-property composition lifecycle ----
 
-describe("DirtyTrackedObject — @Tracked single-property composition lifecycle", () => {
+describe("Entity — @Tracked single-property composition lifecycle", () => {
   it("1. Assigned: child is tracked as Insert", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const node = tracker.construct(() => new NodeModel(tracker));
     const leaf = tracker.construct(() => new LeafModel(tracker));
 
     node.leaf = leaf;
 
-    expect(leaf.trakrState).toBe(State.Insert);
-    expect(tracker.trackedObjects).toContain(leaf);
+    expect(leaf.chronicleState).toBe(State.Insert);
+    expect(tracker._trackedObjects).toContain(leaf);
   });
 
   it("2. Replaced: old child is untracked (collapseInsert), new child is Insert", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const node = tracker.construct(() => new NodeModel(tracker));
     const leaf1 = tracker.construct(() => new LeafModel(tracker));
     node.leaf = leaf1;
@@ -812,13 +736,13 @@ describe("DirtyTrackedObject — @Tracked single-property composition lifecycle"
 
     node.leaf = leaf2;
 
-    expect(tracker.trackedObjects).not.toContain(leaf1);
-    expect(tracker.trackedObjects).toContain(leaf2);
-    expect(leaf2.trakrState).toBe(State.Insert);
+    expect(tracker._trackedObjects).not.toContain(leaf1);
+    expect(tracker._trackedObjects).toContain(leaf2);
+    expect(leaf2.chronicleState).toBe(State.Insert);
   });
 
   it("3. Replaced undone: old child is re-tracked as Insert, new child is untracked", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const node = tracker.construct(() => new NodeModel(tracker));
     const leaf1 = tracker.construct(() => new LeafModel(tracker));
     node.leaf = leaf1;
@@ -827,13 +751,13 @@ describe("DirtyTrackedObject — @Tracked single-property composition lifecycle"
 
     tracker.undo();
 
-    expect(tracker.trackedObjects).toContain(leaf1);
-    expect(leaf1.trakrState).toBe(State.Insert);
-    expect(tracker.trackedObjects).not.toContain(leaf2);
+    expect(tracker._trackedObjects).toContain(leaf1);
+    expect(leaf1.chronicleState).toBe(State.Insert);
+    expect(tracker._trackedObjects).not.toContain(leaf2);
   });
 
   it("4. Replaced undone then redone: old child is untracked again, new child is re-tracked as Insert", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const node = tracker.construct(() => new NodeModel(tracker));
     const leaf1 = tracker.construct(() => new LeafModel(tracker));
     node.leaf = leaf1;
@@ -843,13 +767,13 @@ describe("DirtyTrackedObject — @Tracked single-property composition lifecycle"
 
     tracker.redo();
 
-    expect(tracker.trackedObjects).not.toContain(leaf1);
-    expect(tracker.trackedObjects).toContain(leaf2);
-    expect(leaf2.trakrState).toBe(State.Insert);
+    expect(tracker._trackedObjects).not.toContain(leaf1);
+    expect(tracker._trackedObjects).toContain(leaf2);
+    expect(leaf2.chronicleState).toBe(State.Insert);
   });
 
   it("validity flows correctly through replace → undo → redo", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const node = tracker.construct(() => new NodeModel(tracker));
     const leaf1 = tracker.construct(() => new LeafModel(tracker)); // name="" → invalid
     node.leaf = leaf1;

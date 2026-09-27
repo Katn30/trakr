@@ -1,0 +1,55 @@
+{
+  "name": "@chronicle/unit-of-work",
+  "version": "1.0.0",
+  "description": "Unit of Work for TypeScript models: tracks new, changed and deleted objects, with undo/redo and validation, and commits them in one save.",
+  "type": "module",
+  "main": "./dist/prod/index.cjs",
+  "module": "./dist/prod/index.js",
+  "types": "./dist/dev/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/dev/index.d.ts",
+      "development": {
+        "import": "./dist/dev/index.js",
+        "require": "./dist/dev/index.cjs"
+      },
+      "default": {
+        "import": "./dist/prod/index.js",
+        "require": "./dist/prod/index.cjs"
+      }
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "author": "Katn30",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Katn30/chronicle",
+    "directory": "packages/unit-of-work"
+  },
+  "keywords": [
+    "chronicle",
+    "typescript",
+    "unit-of-work",
+    "change-tracking",
+    "undo-redo",
+    "validation",
+    "dirty-tracking"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch"
+  },
+  "peerDependencies": {
+    "@chronicle/core": "^1.0.0"
+  },
+  "devDependencies": {
+    "@chronicle/core": "1.0.0"
+  }
+}

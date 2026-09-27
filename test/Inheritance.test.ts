@@ -1,16 +1,16 @@
 import { describe, it, expect } from "vitest";
-import { DirtyTrackedObject } from "../src/DirtyTrackedObject";
-import { Tracker } from "../src/Tracker";
-import { DirtyTracker } from "../src/DirtyTracker";
-import { Tracked } from "../src/Tracked";
+import { Entity } from "../packages/unit-of-work/src/Entity";
+import { Tracker } from "../packages/core/src/Tracker";
+import { UnitOfWork } from "../packages/unit-of-work/src/UnitOfWork";
+import { Tracked } from "../packages/core/src/Tracked";
 
-class RuleBase extends DirtyTrackedObject {
+class RuleBase extends Entity {
   @Tracked((self: RuleBase, v: string) =>
     !v ? "value is required" : undefined,
   )
   accessor value: string = "";
 
-  constructor(tracker: DirtyTracker) {
+  constructor(tracker: UnitOfWork) {
     super(tracker);
   }
 }
@@ -39,7 +39,7 @@ class CrossTableRule extends RuleBase {
 
 describe("subclass @Tracked validators are isolated to their own class", () => {
   it("a validator declared on one subclass does not run against a sibling subclass instance", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
 
     tracker.construct(() => new ColumnRule(tracker));
     const cross = tracker.construct(() => new CrossTableRule(tracker));
@@ -54,7 +54,7 @@ describe("subclass @Tracked validators are isolated to their own class", () => {
   });
 
   it("subclass validator still fires on its own instance", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const col = tracker.construct(() => new ColumnRule(tracker));
 
     col.columnName = "";
@@ -64,7 +64,7 @@ describe("subclass @Tracked validators are isolated to their own class", () => {
   });
 
   it("base class validator still fires when a subclass adds its own validators", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const col = tracker.construct(() => new ColumnRule(tracker));
 
     expect(col.validationMessages.get("value")).toBe("value is required");
@@ -74,14 +74,14 @@ describe("subclass @Tracked validators are isolated to their own class", () => {
   });
 
   it("base class validator still fires on a sibling subclass instance", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const cross = tracker.construct(() => new CrossTableRule(tracker));
 
     expect(cross.validationMessages.get("value")).toBe("value is required");
   });
 
   it("validators from unrelated sibling do not appear in this instance's validation map", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const cross = tracker.construct(() => new CrossTableRule(tracker));
 
     tracker.construct(() => new ColumnRule(tracker));
@@ -90,7 +90,7 @@ describe("subclass @Tracked validators are isolated to their own class", () => {
   });
 
   it("subclass validators do not bleed to sibling when base class was previously instantiated", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
 
     tracker.construct(() => new RuleBase(tracker));
 

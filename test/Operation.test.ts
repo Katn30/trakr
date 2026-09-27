@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
-import { Operation } from "../src/Operation";
-import { OperationProperties } from "../src/OperationProperties";
-import { PropertyType } from "../src/PropertyType";
-import { CollectionUtilities } from "../src/CollectionUtilities";
-import { TypedEvent } from "../src/TypedEvent";
+import { Operation } from "../packages/core/src/Operation";
+import { OperationProperties } from "../packages/core/src/OperationProperties";
+import { PropertyType } from "../packages/core/src/PropertyType";
+import { CollectionUtilities } from "../packages/core/src/CollectionUtilities";
+import { TypedEvent } from "../packages/core/src/TypedEvent";
 
 const stubModel = {} as any;
 
@@ -260,7 +260,7 @@ describe("CollectionUtilities.getLast()", () => {
 describe("TypedEvent", () => {
   it("emit with no subscribers does not throw", () => {
     const event = new TypedEvent<number>();
-    expect(() => event.emit(42)).not.toThrow();
+    expect(() => event._emit(42)).not.toThrow();
   });
 
   it("unsubscribe of a handler that was never subscribed does not throw", () => {
@@ -274,7 +274,7 @@ describe("TypedEvent", () => {
     const handler = vi.fn();
     event.subscribe(handler);
     event.subscribe(handler);
-    event.emit(1);
+    event._emit(1);
     expect(handler).toHaveBeenCalledTimes(2);
   });
 
@@ -284,7 +284,7 @@ describe("TypedEvent", () => {
     event.subscribe(handler);
     event.subscribe(handler);
     event.unsubscribe(handler); // removes only the first occurrence
-    event.emit(1);
+    event._emit(1);
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
@@ -293,7 +293,7 @@ describe("TypedEvent", () => {
     const handler = vi.fn();
     const unsub = event.subscribe(handler);
     unsub();
-    event.emit(1);
+    event._emit(1);
     expect(handler).not.toHaveBeenCalled();
   });
 });

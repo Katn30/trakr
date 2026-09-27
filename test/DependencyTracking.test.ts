@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { Tracker } from "../src/Tracker";
-import { DirtyTracker } from "../src/DirtyTracker";
-import { DirtyTrackedObject } from "../src/DirtyTrackedObject";
-import { TrackedCollection } from "../src/TrackedCollection";
-import { Tracked } from "../src/Tracked";
+import { Tracker } from "../packages/core/src/Tracker";
+import { UnitOfWork } from "../packages/unit-of-work/src/UnitOfWork";
+import { Entity } from "../packages/unit-of-work/src/Entity";
+import { TrackedCollection } from "../packages/core/src/TrackedCollection";
+import { Tracked } from "../packages/core/src/Tracked";
 
 // ---- Call counters ----
 // Defined at module level so they are captured by validator closures.
@@ -20,7 +20,7 @@ let flatValidatorCalls = 0;
 
 // ---- Models ----
 
-class OrderModel extends DirtyTrackedObject {
+class OrderModel extends Entity {
   @Tracked()
   accessor maxQuantity: number = 10;
 
@@ -33,21 +33,21 @@ class OrderModel extends DirtyTrackedObject {
   @Tracked()
   accessor notes: string = "";
 
-  constructor(tracker: DirtyTracker) {
+  constructor(tracker: UnitOfWork) {
     super(tracker);
   }
 }
 
-class BudgetModel extends DirtyTrackedObject {
+class BudgetModel extends Entity {
   @Tracked()
   accessor limit: number = 100;
 
-  constructor(tracker: DirtyTracker) {
+  constructor(tracker: UnitOfWork) {
     super(tracker);
   }
 }
 
-class ExpenseModel extends DirtyTrackedObject {
+class ExpenseModel extends Entity {
   @Tracked()
   accessor budget: BudgetModel | undefined = undefined;
 
@@ -58,14 +58,14 @@ class ExpenseModel extends DirtyTrackedObject {
   })
   accessor amount: number = 0;
 
-  constructor(tracker: DirtyTracker) {
+  constructor(tracker: UnitOfWork) {
     super(tracker);
   }
 }
 
 // useA=true  → active dep is valueA
 // useA=false → active dep is valueB
-class ConditionalModel extends DirtyTrackedObject {
+class ConditionalModel extends Entity {
   @Tracked()
   accessor useA: boolean = true;
 
@@ -81,12 +81,12 @@ class ConditionalModel extends DirtyTrackedObject {
   })
   accessor label: string = "";
 
-  constructor(tracker: DirtyTracker) {
+  constructor(tracker: UnitOfWork) {
     super(tracker);
   }
 }
 
-class CartModel extends DirtyTrackedObject {
+class CartModel extends Entity {
   readonly items: TrackedCollection<number>;
 
   @Tracked((self: CartModel, _v: string) => {
@@ -95,14 +95,14 @@ class CartModel extends DirtyTrackedObject {
   })
   accessor name: string = "cart";
 
-  constructor(tracker: DirtyTracker, items: TrackedCollection<number>) {
+  constructor(tracker: UnitOfWork, items: TrackedCollection<number>) {
     super(tracker);
     this.items = items;
   }
 }
 
 // Validator only uses the passed value — no cross-property reads via self.xxx.
-class SelfOnlyModel extends DirtyTrackedObject {
+class SelfOnlyModel extends Entity {
   @Tracked()
   accessor unrelated: number = 0;
 
@@ -112,13 +112,13 @@ class SelfOnlyModel extends DirtyTrackedObject {
   })
   accessor label: string = "hello";
 
-  constructor(tracker: DirtyTracker) {
+  constructor(tracker: UnitOfWork) {
     super(tracker);
   }
 }
 
 // Bug 1: two validators that both read the same property (sharedDep).
-class SharedDepModel extends DirtyTrackedObject {
+class SharedDepModel extends Entity {
   @Tracked()
   accessor sharedDep: number = 10;
 
@@ -134,22 +134,22 @@ class SharedDepModel extends DirtyTrackedObject {
   })
   accessor field2: number = 0;
 
-  constructor(tracker: DirtyTracker) {
+  constructor(tracker: UnitOfWork) {
     super(tracker);
   }
 }
 
 // Bug 2: dependent object reads a property from a source object.
-class BugSourceModel extends DirtyTrackedObject {
+class BugSourceModel extends Entity {
   @Tracked()
   accessor value: number = 0;
 
-  constructor(tracker: DirtyTracker) {
+  constructor(tracker: UnitOfWork) {
     super(tracker);
   }
 }
 
-class BugDependentModel extends DirtyTrackedObject {
+class BugDependentModel extends Entity {
   @Tracked()
   accessor source: BugSourceModel | undefined = undefined;
 
@@ -158,13 +158,13 @@ class BugDependentModel extends DirtyTrackedObject {
   })
   accessor amount: number = 0;
 
-  constructor(tracker: DirtyTracker) {
+  constructor(tracker: UnitOfWork) {
     super(tracker);
   }
 }
 
 // Bug 3: validator that calls flat() on the collection.
-class FlatModel extends DirtyTrackedObject {
+class FlatModel extends Entity {
   readonly matrix: TrackedCollection<number[]>;
 
   @Tracked((self: FlatModel, _v: string) => {
@@ -173,7 +173,7 @@ class FlatModel extends DirtyTrackedObject {
   })
   accessor name: string = "";
 
-  constructor(tracker: DirtyTracker, matrix: TrackedCollection<number[]>) {
+  constructor(tracker: UnitOfWork, matrix: TrackedCollection<number[]>) {
     super(tracker);
     this.matrix = matrix;
   }
@@ -183,11 +183,11 @@ class FlatModel extends DirtyTrackedObject {
 
 describe("Dependency tracking", () => {
   describe("same-object property dependencies", () => {
-    let tracker: DirtyTracker;
+    let tracker: UnitOfWork;
     let order: OrderModel;
 
     beforeEach(() => {
-      tracker = new DirtyTracker();
+      tracker = new UnitOfWork();
       order = tracker.construct(() => new OrderModel(tracker));
       sameObjCalls = 0;
     });
@@ -210,28 +210,28 @@ describe("Dependency tracking", () => {
     it("produces correct validation result after dep change", () => {
       order.quantity = 8; // under the default maxQuantity of 10
       sameObjCalls = 0;
-      expect(order.trakrIsValid).toBe(true);
+      expect(order.chronicleIsValid).toBe(true);
       order.maxQuantity = 5; // now quantity (8) exceeds maxQuantity (5)
-      expect(order.trakrIsValid).toBe(false);
+      expect(order.chronicleIsValid).toBe(false);
       expect(order.validationMessages.get("quantity")).toBe("Exceeds max");
     });
 
     it("clears error when dep change makes validation pass again", () => {
       order.quantity = 15; // exceeds default maxQuantity of 10
-      expect(order.trakrIsValid).toBe(false);
+      expect(order.chronicleIsValid).toBe(false);
       order.maxQuantity = 20; // now quantity (15) is within limit
-      expect(order.trakrIsValid).toBe(true);
+      expect(order.chronicleIsValid).toBe(true);
       expect(order.validationMessages.has("quantity")).toBe(false);
     });
   });
 
   describe("cross-object dependencies", () => {
-    let tracker: DirtyTracker;
+    let tracker: UnitOfWork;
     let budget: BudgetModel;
     let expense: ExpenseModel;
 
     beforeEach(() => {
-      tracker = new DirtyTracker();
+      tracker = new UnitOfWork();
       tracker.construct(() => {
         budget = new BudgetModel(tracker);
         expense = new ExpenseModel(tracker);
@@ -249,9 +249,9 @@ describe("Dependency tracking", () => {
 
     it("produces correct result after cross-object dep change", () => {
       expense.amount = 50;
-      expect(expense.trakrIsValid).toBe(true);
+      expect(expense.chronicleIsValid).toBe(true);
       budget.limit = 30;
-      expect(expense.trakrIsValid).toBe(false);
+      expect(expense.chronicleIsValid).toBe(false);
       expect(expense.validationMessages.get("amount")).toBe("Over budget");
     });
 
@@ -273,11 +273,11 @@ describe("Dependency tracking", () => {
   });
 
   describe("conditional dependencies", () => {
-    let tracker: DirtyTracker;
+    let tracker: UnitOfWork;
     let model: ConditionalModel;
 
     beforeEach(() => {
-      tracker = new DirtyTracker();
+      tracker = new UnitOfWork();
       model = tracker.construct(() => new ConditionalModel(tracker));
       conditionalCalls = 0;
     });
@@ -315,21 +315,21 @@ describe("Dependency tracking", () => {
 
     it("produces correct result across a branch flip", () => {
       // useA=true, valueA=5 → valid
-      expect(model.trakrIsValid).toBe(true);
+      expect(model.chronicleIsValid).toBe(true);
       model.useA = false; // switch to valueB branch (valueB=5) → still valid
-      expect(model.trakrIsValid).toBe(true);
+      expect(model.chronicleIsValid).toBe(true);
       model.valueB = -1; // valueB now negative → invalid
-      expect(model.trakrIsValid).toBe(false);
+      expect(model.chronicleIsValid).toBe(false);
     });
   });
 
   describe("TrackedCollection dependencies", () => {
-    let tracker: DirtyTracker;
+    let tracker: UnitOfWork;
     let cart: CartModel;
     let items: TrackedCollection<number>;
 
     beforeEach(() => {
-      tracker = new DirtyTracker();
+      tracker = new UnitOfWork();
       items = new TrackedCollection<number>(tracker, [1, 2, 3]);
       cart = tracker.construct(() => new CartModel(tracker, items));
       collectionCalls = 0;
@@ -352,15 +352,15 @@ describe("Dependency tracking", () => {
 
     it("produces correct result when a negative item is pushed", () => {
       items.push(-1);
-      expect(cart.trakrIsValid).toBe(false);
+      expect(cart.chronicleIsValid).toBe(false);
       expect(cart.validationMessages.get("name")).toBe("Has negative item");
     });
 
     it("clears error when the negative item is removed", () => {
       items.push(-1);
-      expect(cart.trakrIsValid).toBe(false);
+      expect(cart.chronicleIsValid).toBe(false);
       items.remove(-1);
-      expect(cart.trakrIsValid).toBe(true);
+      expect(cart.chronicleIsValid).toBe(true);
     });
 
     it("does not re-run validator when an unrelated collection changes", () => {
@@ -372,11 +372,11 @@ describe("Dependency tracking", () => {
   });
 
   describe("self-only dependency (no cross-property reads)", () => {
-    let tracker: DirtyTracker;
+    let tracker: UnitOfWork;
     let model: SelfOnlyModel;
 
     beforeEach(() => {
-      tracker = new DirtyTracker();
+      tracker = new UnitOfWork();
       model = tracker.construct(() => new SelfOnlyModel(tracker));
       selfOnlyCalls = 0;
     });
@@ -395,11 +395,11 @@ describe("Dependency tracking", () => {
   // ------------------------------------------------------------------ Bug 1
 
   describe("Bug 1: mutation during iteration (multiple validators on same dep)", () => {
-    let tracker: DirtyTracker;
+    let tracker: UnitOfWork;
     let model: SharedDepModel;
 
     beforeEach(() => {
-      tracker = new DirtyTracker();
+      tracker = new UnitOfWork();
       model = tracker.construct(() => new SharedDepModel(tracker));
       field1Calls = 0;
       field2Calls = 0;
@@ -420,33 +420,33 @@ describe("Dependency tracking", () => {
       model.sharedDep = 5; // 8 > 5 → both fields should now be invalid
       expect(model.validationMessages.get("field1")).toBe("field1 exceeds limit");
       expect(model.validationMessages.get("field2")).toBe("field2 exceeds limit");
-      expect(model.trakrIsValid).toBe(false);
+      expect(model.chronicleIsValid).toBe(false);
     });
 
     it("clears errors for all dependent validators when dep change makes them valid", () => {
       model.sharedDep = 5;
       model.field1 = 8; // 8 > 5 → invalid
       model.field2 = 8; // 8 > 5 → invalid
-      expect(model.trakrIsValid).toBe(false);
+      expect(model.chronicleIsValid).toBe(false);
       field1Calls = 0;
       field2Calls = 0;
 
       model.sharedDep = 20; // both fields now within limit
       expect(model.validationMessages.has("field1")).toBe(false);
       expect(model.validationMessages.has("field2")).toBe(false);
-      expect(model.trakrIsValid).toBe(true);
+      expect(model.chronicleIsValid).toBe(true);
     });
   });
 
   // ------------------------------------------------------------------ Bug 2
 
   describe("Bug 2: stale dep entries after object destruction", () => {
-    let tracker: DirtyTracker;
+    let tracker: UnitOfWork;
     let src: BugSourceModel;
     let dep: BugDependentModel;
 
     beforeEach(() => {
-      tracker = new DirtyTracker();
+      tracker = new UnitOfWork();
       tracker.construct(() => {
         src = new BugSourceModel(tracker);
         dep = new BugDependentModel(tracker);
@@ -477,12 +477,12 @@ describe("Dependency tracking", () => {
   // ------------------------------------------------------------------ Bug 3
 
   describe("Bug 3: TrackedCollection.flat() bypasses readAccess()", () => {
-    let tracker: DirtyTracker;
+    let tracker: UnitOfWork;
     let model: FlatModel;
     let matrix: TrackedCollection<number[]>;
 
     beforeEach(() => {
-      tracker = new DirtyTracker();
+      tracker = new UnitOfWork();
       matrix = new TrackedCollection<number[]>(tracker, [[1, 2], [3, 4]]);
       model = tracker.construct(() => new FlatModel(tracker, matrix));
       flatValidatorCalls = 0;
@@ -495,16 +495,16 @@ describe("Dependency tracking", () => {
 
     it("detects a negative value pushed via flat()", () => {
       matrix.push([-1, -2]);
-      expect(model.trakrIsValid).toBe(false);
+      expect(model.chronicleIsValid).toBe(false);
       expect(model.validationMessages.get("name")).toBe("Has negative");
     });
 
     it("clears error when the negative row is removed", () => {
       const negativeRow = [-1, -2];
       matrix.push(negativeRow);
-      expect(model.trakrIsValid).toBe(false);
+      expect(model.chronicleIsValid).toBe(false);
       matrix.remove(negativeRow);
-      expect(model.trakrIsValid).toBe(true);
+      expect(model.chronicleIsValid).toBe(true);
     });
   });
 });
@@ -516,16 +516,16 @@ let validatorBCalls = 0;
 let sharedColCallsA = 0;
 let sharedColCallsB = 0;
 
-class SourceModel extends DirtyTrackedObject {
+class SourceModel extends Entity {
   @Tracked()
   accessor value: number = 0;
 
-  constructor(tracker: DirtyTracker) {
+  constructor(tracker: UnitOfWork) {
     super(tracker);
   }
 }
 
-class DependentA extends DirtyTrackedObject {
+class DependentA extends Entity {
   @Tracked()
   accessor source: SourceModel | undefined = undefined;
 
@@ -535,12 +535,12 @@ class DependentA extends DirtyTrackedObject {
   })
   accessor amount: number = 0;
 
-  constructor(tracker: DirtyTracker) {
+  constructor(tracker: UnitOfWork) {
     super(tracker);
   }
 }
 
-class DependentB extends DirtyTrackedObject {
+class DependentB extends Entity {
   @Tracked()
   accessor source: SourceModel | undefined = undefined;
 
@@ -550,12 +550,12 @@ class DependentB extends DirtyTrackedObject {
   })
   accessor amount: number = 0;
 
-  constructor(tracker: DirtyTracker) {
+  constructor(tracker: UnitOfWork) {
     super(tracker);
   }
 }
 
-class UndoModel extends DirtyTrackedObject {
+class UndoModel extends Entity {
   @Tracked()
   accessor limit: number = 10;
 
@@ -564,12 +564,12 @@ class UndoModel extends DirtyTrackedObject {
   })
   accessor value: number = 0;
 
-  constructor(tracker: DirtyTracker) {
+  constructor(tracker: UnitOfWork) {
     super(tracker);
   }
 }
 
-class TwoValidatorsModel extends DirtyTrackedObject {
+class TwoValidatorsModel extends Entity {
   readonly col: TrackedCollection<number>;
 
   @Tracked((self: TwoValidatorsModel, _v: string) => {
@@ -584,7 +584,7 @@ class TwoValidatorsModel extends DirtyTrackedObject {
   })
   accessor nameB: string = "";
 
-  constructor(tracker: DirtyTracker, col: TrackedCollection<number>) {
+  constructor(tracker: UnitOfWork, col: TrackedCollection<number>) {
     super(tracker);
     this.col = col;
   }
@@ -592,20 +592,20 @@ class TwoValidatorsModel extends DirtyTrackedObject {
 
 let collectionCrossDepCalls = 0;
 
-class ThresholdModel extends DirtyTrackedObject {
+class ThresholdModel extends Entity {
   @Tracked()
   accessor threshold: number = 3;
 
-  constructor(tracker: DirtyTracker) {
+  constructor(tracker: UnitOfWork) {
     super(tracker);
   }
 }
 
 describe("Dependency tracking — integration", () => {
-  let tracker: DirtyTracker;
+  let tracker: UnitOfWork;
 
   beforeEach(() => {
-    tracker = new DirtyTracker();
+    tracker = new UnitOfWork();
     validatorACalls = 0;
     validatorBCalls = 0;
     sharedColCallsA = 0;
@@ -621,42 +621,42 @@ describe("Dependency tracking — integration", () => {
 
     it("restores valid state after undoing an invalid change", () => {
       model.value = 15;
-      expect(model.trakrIsValid).toBe(false);
+      expect(model.chronicleIsValid).toBe(false);
       tracker.undo();
       expect(model.value).toBe(0);
-      expect(model.trakrIsValid).toBe(true);
+      expect(model.chronicleIsValid).toBe(true);
     });
 
     it("restores invalid state after redoing the change", () => {
       model.value = 15;
       tracker.undo();
-      expect(model.trakrIsValid).toBe(true);
+      expect(model.chronicleIsValid).toBe(true);
       tracker.redo();
       expect(model.value).toBe(15);
-      expect(model.trakrIsValid).toBe(false);
+      expect(model.chronicleIsValid).toBe(false);
     });
 
     it("restores valid state after undoing a dep change that caused invalidity", () => {
       model.value = 8;
       model.limit = 5;
-      expect(model.trakrIsValid).toBe(false);
+      expect(model.chronicleIsValid).toBe(false);
       tracker.undo();
       expect(model.limit).toBe(10);
-      expect(model.trakrIsValid).toBe(true);
+      expect(model.chronicleIsValid).toBe(true);
     });
 
     it("preserves correct state through multiple undo/redo cycles", () => {
       model.value = 15;
       model.limit = 20;
-      expect(model.trakrIsValid).toBe(true);
+      expect(model.chronicleIsValid).toBe(true);
       tracker.undo();
-      expect(model.trakrIsValid).toBe(false);
+      expect(model.chronicleIsValid).toBe(false);
       tracker.undo();
-      expect(model.trakrIsValid).toBe(true);
+      expect(model.chronicleIsValid).toBe(true);
       tracker.redo();
-      expect(model.trakrIsValid).toBe(false);
+      expect(model.chronicleIsValid).toBe(false);
       tracker.redo();
-      expect(model.trakrIsValid).toBe(true);
+      expect(model.chronicleIsValid).toBe(true);
     });
 
     it("tracker.isValid reflects model validity through undo/redo", () => {
@@ -715,9 +715,9 @@ describe("Dependency tracking — integration", () => {
     it("B produces correct validation state after A is destroyed", () => {
       depA.destroy();
       depB.amount = 3;
-      expect(depB.trakrIsValid).toBe(false);
+      expect(depB.chronicleIsValid).toBe(false);
       src.value = 5;
-      expect(depB.trakrIsValid).toBe(true);
+      expect(depB.chronicleIsValid).toBe(true);
     });
   });
 
@@ -727,29 +727,29 @@ describe("Dependency tracking — integration", () => {
       model.value = 5;
 
       model.limit = 3;
-      expect(model.trakrIsValid).toBe(false);
+      expect(model.chronicleIsValid).toBe(false);
 
       model.limit = 10;
-      expect(model.trakrIsValid).toBe(true);
+      expect(model.chronicleIsValid).toBe(true);
 
       model.limit = 4;
-      expect(model.trakrIsValid).toBe(false);
+      expect(model.chronicleIsValid).toBe(false);
     });
 
     it("changing the validated property multiple times gives correct state each time", () => {
       const model = tracker.construct(() => new UndoModel(tracker));
 
       model.value = 5;
-      expect(model.trakrIsValid).toBe(true);
+      expect(model.chronicleIsValid).toBe(true);
 
       model.value = 15;
-      expect(model.trakrIsValid).toBe(false);
+      expect(model.chronicleIsValid).toBe(false);
 
       model.value = 8;
-      expect(model.trakrIsValid).toBe(true);
+      expect(model.chronicleIsValid).toBe(true);
 
       model.value = 20;
-      expect(model.trakrIsValid).toBe(false);
+      expect(model.chronicleIsValid).toBe(false);
     });
   });
 
@@ -759,9 +759,9 @@ describe("Dependency tracking — integration", () => {
         items.some((x) => x < 0) ? "Has negative" : undefined,
       );
 
-      expect(col.trakrIsValid).toBe(true);
+      expect(col.chronicleIsValid).toBe(true);
       col.push(-1);
-      expect(col.trakrIsValid).toBe(false);
+      expect(col.chronicleIsValid).toBe(false);
       expect(col.error).toBe("Has negative");
     });
 
@@ -772,7 +772,7 @@ describe("Dependency tracking — integration", () => {
 
       col.push(-1);
       col.remove(-1);
-      expect(col.trakrIsValid).toBe(true);
+      expect(col.chronicleIsValid).toBe(true);
       expect(col.error).toBeUndefined();
     });
 
@@ -793,9 +793,9 @@ describe("Dependency tracking — integration", () => {
         items.length === 0 ? "Empty" : undefined,
       );
 
-      expect(col.trakrIsValid).toBe(true);
+      expect(col.chronicleIsValid).toBe(true);
       col.reset([]);
-      expect(col.trakrIsValid).toBe(false);
+      expect(col.chronicleIsValid).toBe(false);
       expect(col.error).toBe("Empty");
     });
   });
@@ -819,7 +819,7 @@ describe("Dependency tracking — integration", () => {
       sharedItems.push(-1);
       expect(m.validationMessages.get("nameA")).toBe("neg");
       expect(m.validationMessages.has("nameB")).toBe(false);
-      expect(m.trakrIsValid).toBe(false);
+      expect(m.chronicleIsValid).toBe(false);
     });
 
     it("pushing 4 more items makes only nameB invalid", () => {
@@ -829,7 +829,7 @@ describe("Dependency tracking — integration", () => {
       sharedItems.push(3, 4, 5, 6);
       expect(m.validationMessages.has("nameA")).toBe(false);
       expect(m.validationMessages.get("nameB")).toBe("too many");
-      expect(m.trakrIsValid).toBe(false);
+      expect(m.chronicleIsValid).toBe(false);
     });
   });
 
@@ -849,13 +849,13 @@ describe("Dependency tracking — integration", () => {
     });
 
     it("is valid initially when items.length <= threshold", () => {
-      expect(col.trakrIsValid).toBe(true);
+      expect(col.chronicleIsValid).toBe(true);
       expect(col.error).toBeUndefined();
     });
 
     it("re-validates when threshold drops below items.length", () => {
       thresholdModel.threshold = 1; // items.length=2 > 1 → invalid
-      expect(col.trakrIsValid).toBe(false);
+      expect(col.chronicleIsValid).toBe(false);
       expect(col.error).toBe("Too many");
     });
 
@@ -867,7 +867,7 @@ describe("Dependency tracking — integration", () => {
     it("re-validates when threshold rises above items.length again", () => {
       thresholdModel.threshold = 1; // invalid
       thresholdModel.threshold = 5; // valid again
-      expect(col.trakrIsValid).toBe(true);
+      expect(col.chronicleIsValid).toBe(true);
       expect(col.error).toBeUndefined();
     });
 

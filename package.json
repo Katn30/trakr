@@ -1,56 +1,29 @@
 {
-  "name": "@katn30/trakr",
-  "version": "8.0.0",
-  "description": "TypeScript state-management library implementing the Unit of Work pattern, with object tracking for undo/redo and validation support.",
+  "name": "chronicle",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Monorepo of @chronicle/core, @chronicle/unit-of-work and @chronicle/event-log.",
   "type": "module",
-  "main": "./dist/prod/index.cjs",
-  "module": "./dist/prod/index.js",
-  "types": "./dist/dev/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/dev/index.d.ts",
-      "development": {
-        "import": "./dist/dev/index.js",
-        "require": "./dist/dev/index.cjs"
-      },
-      "default": {
-        "import": "./dist/prod/index.js",
-        "require": "./dist/prod/index.cjs"
-      }
-    }
-  },
-  "author": "Katn30",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/Katn30/trackt"
-  },
-  "keywords": [
-    "trakr",
-    "typescript",
-    "undo-redo",
-    "state-management",
-    "unit-of-work",
-    "object-tracking",
-    "commit"
-  ],
-  "publishConfig": {
-    "access": "public"
-  },
-  "files": [
-    "dist"
+  "workspaces": [
+    "packages/core",
+    "packages/unit-of-work",
+    "packages/event-log"
   ],
   "scripts": {
-    "build": "tsup",
-    "dev": "tsup --watch",
+    "build": "npm run build -w @chronicle/core && npm run build -w @chronicle/unit-of-work -w @chronicle/event-log",
     "typecheck": "tsc -p tsconfig.test.json",
     "test": "npm run typecheck && vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "npm run build && npm test && changeset publish"
   },
   "devDependencies": {
+    "@changesets/cli": "^3.0.3",
     "@types/node": "^25.5.0",
     "tsup": "^8.0.0",
     "typescript": "^5.4.0",
     "vitest": "^4.1.2"
-  }
+  },
+  "license": "MIT"
 }

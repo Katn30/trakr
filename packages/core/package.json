@@ -1,0 +1,47 @@
+{
+  "name": "@chronicle/core",
+  "version": "1.0.0",
+  "description": "Shared core of @chronicle/unit-of-work and @chronicle/event-log: change tracking, undo/redo, sessions and validation for TypeScript models.",
+  "type": "module",
+  "main": "./dist/prod/index.cjs",
+  "module": "./dist/prod/index.js",
+  "types": "./dist/dev/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/dev/index.d.ts",
+      "development": {
+        "import": "./dist/dev/index.js",
+        "require": "./dist/dev/index.cjs"
+      },
+      "default": {
+        "import": "./dist/prod/index.js",
+        "require": "./dist/prod/index.cjs"
+      }
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "author": "Katn30",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Katn30/chronicle",
+    "directory": "packages/core"
+  },
+  "keywords": [
+    "chronicle",
+    "typescript",
+    "change-tracking",
+    "undo-redo",
+    "validation"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch"
+  }
+}

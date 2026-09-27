@@ -1,5 +1,8 @@
 import { defineConfig } from 'vitest/config';
 import { transformWithEsbuild } from 'vite';
+import { fileURLToPath } from 'node:url';
+
+const source = (pkg: string) => fileURLToPath(new URL(`./packages/${pkg}/src/index.ts`, import.meta.url));
 
 // Vite 8 uses OXC by default, but OXC has a gap: in stage-3 decorator mode
 // it does NOT lower TypeScript's `accessor` keyword (auto-accessor) to
@@ -29,6 +32,14 @@ const esbuildDecoratorPlugin = {
 export default defineConfig({
     plugins: [esbuildDecoratorPlugin],
     oxc: false,
+    // Tests run against the sources: each package name resolves to its src/index.ts.
+    resolve: {
+        alias: [
+            { find: /^@chronicle\/core$/, replacement: source('core') },
+            { find: /^@chronicle\/unit-of-work$/, replacement: source('unit-of-work') },
+            { find: /^@chronicle\/event-log$/, replacement: source('event-log') },
+        ],
+    },
     test: {
         exclude: ['.claude/**', 'node_modules/**'],
     },

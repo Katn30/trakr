@@ -1,14 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { DirtyTrackedObject } from "../src/DirtyTrackedObject";
-import { Tracker } from "../src/Tracker";
-import { DirtyTracker } from "../src/DirtyTracker";
-import { Tracked } from "../src/Tracked";
-import { TrackedCollection } from "../src/TrackedCollection";
+import { Entity } from "../packages/unit-of-work/src/Entity";
+import { Tracker } from "../packages/core/src/Tracker";
+import { UnitOfWork } from "../packages/unit-of-work/src/UnitOfWork";
+import { Tracked } from "../packages/core/src/Tracked";
+import { TrackedCollection } from "../packages/core/src/TrackedCollection";
 
 // ---- Models ----
 
 // Case 1a: @Tracked setter → @Tracked setter
-class NameModel extends DirtyTrackedObject {
+class NameModel extends Entity {
   private _firstName: string = "";
   private _lastName: string = "";
 
@@ -28,11 +28,11 @@ class NameModel extends DirtyTrackedObject {
 }
 
 // Case 1b: @Tracked setter → TrackedCollection mutation
-class TagModel extends DirtyTrackedObject {
+class TagModel extends Entity {
   private _tag: string = "";
   readonly tags: TrackedCollection<string>;
 
-  constructor(tracker: DirtyTracker) {
+  constructor(tracker: UnitOfWork) {
     super(tracker);
     this.tags = new TrackedCollection<string>(tracker);
   }
@@ -45,12 +45,12 @@ class TagModel extends DirtyTrackedObject {
 }
 
 // Case 2: TrackedCollection.changed → @Tracked setter
-class OrderModel extends DirtyTrackedObject {
+class OrderModel extends Entity {
   @Tracked() accessor itemCount: number = 0;
 
   readonly items: TrackedCollection<string>;
 
-  constructor(tracker: DirtyTracker) {
+  constructor(tracker: UnitOfWork) {
     super(tracker);
     this.items = new TrackedCollection<string>(tracker);
     this.items.changed.subscribe(() => {
@@ -60,55 +60,55 @@ class OrderModel extends DirtyTrackedObject {
 }
 
 // Case 1b: @Tracked accessor onChange → @Tracked setter
-class AccessorTagModel extends DirtyTrackedObject {
+class AccessorTagModel extends Entity {
   readonly tags: TrackedCollection<string>;
 
   @Tracked(
     undefined,
-    (self: AccessorTagModel, newValue: string, oldValue: string) => {
+    { beforeChange: (self: AccessorTagModel, newValue: string, oldValue: string) => {
       if (oldValue) self.tags.remove(oldValue);
       if (newValue) self.tags.push(newValue);
-    },
+    } },
   )
   accessor tag: string = "";
 
-  constructor(tracker: DirtyTracker) {
+  constructor(tracker: UnitOfWork) {
     super(tracker);
     this.tags = new TrackedCollection<string>(tracker);
   }
 }
 
 // Case 1b variant: @Tracked accessor onChange → @Tracked accessor
-class AccessorNameModel extends DirtyTrackedObject {
+class AccessorNameModel extends Entity {
   @Tracked(
     undefined,
-    (self: AccessorNameModel, newValue: string) => {
+    { beforeChange: (self: AccessorNameModel, newValue: string) => {
       const [first = "", last = ""] = newValue.split(" ");
       self.firstName = first;
       self.lastName = last;
-    },
+    } },
   )
   accessor fullName: string = "";
 
   @Tracked() accessor firstName: string = "";
   @Tracked() accessor lastName: string = "";
 
-  constructor(tracker: DirtyTracker) {
+  constructor(tracker: UnitOfWork) {
     super(tracker);
   }
 }
 
-// Case 3: DirtyTrackedObject.trackedChanged → @Tracked setter
-class TitleModel extends DirtyTrackedObject {
+// Case 3: Entity.afterChange → @Tracked setter
+class TitleModel extends Entity {
   private _title: string = "";
   @Tracked() accessor summary: string = "";
 
   get title(): string { return this._title; }
   @Tracked() set title(value: string) { this._title = value; }
 
-  constructor(tracker: DirtyTracker) {
+  constructor(tracker: UnitOfWork) {
     super(tracker);
-    this.trackedChanged.subscribe(({ property, newValue }) => {
+    this.afterChange.subscribe(({ property, newValue }) => {
       if (property === "title") {
         this.summary = `Summary: ${newValue}`;
       }
@@ -116,16 +116,16 @@ class TitleModel extends DirtyTrackedObject {
   }
 }
 
-// Case 4: TrackedCollection.trackedChanged → @Tracked setter
-class CountedCollection extends DirtyTrackedObject {
+// Case 4: TrackedCollection.afterChange → @Tracked setter
+class CountedCollection extends Entity {
   @Tracked() accessor count: number = 0;
 
   readonly items: TrackedCollection<string>;
 
-  constructor(tracker: DirtyTracker) {
+  constructor(tracker: UnitOfWork) {
     super(tracker);
     this.items = new TrackedCollection<string>(tracker);
-    this.items.trackedChanged.subscribe(() => {
+    this.items.afterChange.subscribe(() => {
       this.count = this.items.length;
     });
   }
@@ -135,7 +135,7 @@ class CountedCollection extends DirtyTrackedObject {
 
 describe("Automatic composing – @Tracked setter → @Tracked setter", () => {
   it("writes inside @Tracked setter body compose into one undo step", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new NameModel(tracker));
 
     model.fullName = "John Doe";
@@ -151,7 +151,7 @@ describe("Automatic composing – @Tracked setter → @Tracked setter", () => {
   });
 
   it("redo restores all properties written inside the setter", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new NameModel(tracker));
 
     model.fullName = "John Doe";
@@ -166,7 +166,7 @@ describe("Automatic composing – @Tracked setter → @Tracked setter", () => {
 
 describe("Automatic composing – @Tracked setter → TrackedCollection mutation", () => {
   it("collection mutation inside @Tracked setter body composes into one undo step", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new TagModel(tracker));
 
     model.tag = "active";
@@ -182,7 +182,7 @@ describe("Automatic composing – @Tracked setter → TrackedCollection mutation
   });
 
   it("redo restores both the property and the collection", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new TagModel(tracker));
 
     model.tag = "active";
@@ -197,7 +197,7 @@ describe("Automatic composing – @Tracked setter → TrackedCollection mutation
 
 describe("Automatic composing – @Tracked accessor onChange → TrackedCollection mutation", () => {
   it("collection mutation inside onChange composes into one undo step", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new AccessorTagModel(tracker));
 
     model.tag = "active";
@@ -214,7 +214,7 @@ describe("Automatic composing – @Tracked accessor onChange → TrackedCollecti
   });
 
   it("redo restores both the accessor and the collection", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new AccessorTagModel(tracker));
 
     model.tag = "active";
@@ -227,7 +227,7 @@ describe("Automatic composing – @Tracked accessor onChange → TrackedCollecti
   });
 
   it("onChange does not fire during undo or redo", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new AccessorTagModel(tracker));
 
     model.tag = "active";
@@ -242,7 +242,7 @@ describe("Automatic composing – @Tracked accessor onChange → TrackedCollecti
 
 describe("Automatic composing – @Tracked accessor onChange → @Tracked accessor", () => {
   it("accessor writes inside onChange compose into one undo step", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new AccessorNameModel(tracker));
 
     model.fullName = "John Doe";
@@ -259,7 +259,7 @@ describe("Automatic composing – @Tracked accessor onChange → @Tracked access
   });
 
   it("redo restores all accessors written inside onChange", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new AccessorNameModel(tracker));
 
     model.fullName = "John Doe";
@@ -275,7 +275,7 @@ describe("Automatic composing – @Tracked accessor onChange → @Tracked access
 
 describe("Automatic composing – TrackedCollection.changed → @Tracked setter", () => {
   it("collection mutation and changed-listener property write compose into one undo step", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const order = tracker.construct(() => new OrderModel(tracker));
 
     order.items.push("item-1");
@@ -291,7 +291,7 @@ describe("Automatic composing – TrackedCollection.changed → @Tracked setter"
   });
 
   it("redo restores both collection and property", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const order = tracker.construct(() => new OrderModel(tracker));
 
     order.items.push("item-1");
@@ -304,7 +304,7 @@ describe("Automatic composing – TrackedCollection.changed → @Tracked setter"
   });
 
   it("multiple pushes each compose with their listener update separately", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const order = tracker.construct(() => new OrderModel(tracker));
 
     order.items.push("item-1");
@@ -321,9 +321,9 @@ describe("Automatic composing – TrackedCollection.changed → @Tracked setter"
   });
 });
 
-describe("Automatic composing – DirtyTrackedObject.trackedChanged → @Tracked setter", () => {
-  it("property write inside trackedChanged listener composes into one undo step", () => {
-    const tracker = new DirtyTracker();
+describe("Automatic composing – Entity.afterChange → @Tracked setter", () => {
+  it("property write inside afterChange listener composes into one undo step", () => {
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new TitleModel(tracker));
 
     model.title = "Hello";
@@ -339,7 +339,7 @@ describe("Automatic composing – DirtyTrackedObject.trackedChanged → @Tracked
   });
 
   it("redo restores both the source property and the listener-written property", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new TitleModel(tracker));
 
     model.title = "Hello";
@@ -351,8 +351,8 @@ describe("Automatic composing – DirtyTrackedObject.trackedChanged → @Tracked
     expect(tracker.canRedo).toBe(false);
   });
 
-  it("trackedChanged listener does not fire during undo or redo", () => {
-    const tracker = new DirtyTracker();
+  it("afterChange listener does not fire during undo or redo", () => {
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new TitleModel(tracker));
 
     model.title = "Hello";
@@ -367,9 +367,9 @@ describe("Automatic composing – DirtyTrackedObject.trackedChanged → @Tracked
   });
 });
 
-describe("Automatic composing – TrackedCollection.trackedChanged → @Tracked setter", () => {
-  it("property write inside trackedChanged listener composes into one undo step", () => {
-    const tracker = new DirtyTracker();
+describe("Automatic composing – TrackedCollection.afterChange → @Tracked setter", () => {
+  it("property write inside afterChange listener composes into one undo step", () => {
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new CountedCollection(tracker));
 
     model.items.push("a");
@@ -385,7 +385,7 @@ describe("Automatic composing – TrackedCollection.trackedChanged → @Tracked 
   });
 
   it("redo restores both the collection and the listener-written property", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new CountedCollection(tracker));
 
     model.items.push("a");
@@ -397,8 +397,8 @@ describe("Automatic composing – TrackedCollection.trackedChanged → @Tracked 
     expect(tracker.canRedo).toBe(false);
   });
 
-  it("trackedChanged listener does not fire during undo or redo", () => {
-    const tracker = new DirtyTracker();
+  it("afterChange listener does not fire during undo or redo", () => {
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new CountedCollection(tracker));
 
     model.items.push("a");

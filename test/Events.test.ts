@@ -1,36 +1,36 @@
 import { describe, it, expect } from "vitest";
-import { DirtyTrackedObject } from "../src/DirtyTrackedObject";
-import { Tracker } from "../src/Tracker";
-import { DirtyTracker } from "../src/DirtyTracker";
-import { Tracked } from "../src/Tracked";
-import { TrackedCollection } from "../src/TrackedCollection";
+import { Entity } from "../packages/unit-of-work/src/Entity";
+import { Tracker } from "../packages/core/src/Tracker";
+import { UnitOfWork } from "../packages/unit-of-work/src/UnitOfWork";
+import { Tracked } from "../packages/core/src/Tracked";
+import { TrackedCollection } from "../packages/core/src/TrackedCollection";
 
 // ---- Models ----
 
-class SimpleModel extends DirtyTrackedObject {
+class SimpleModel extends Entity {
   @Tracked() accessor value: string = "";
 
-  constructor(tracker: DirtyTracker) {
+  constructor(tracker: UnitOfWork) {
     super(tracker);
   }
 }
 
-class SetterModel extends DirtyTrackedObject {
+class SetterModel extends Entity {
   private _value: string = "";
 
   get value(): string { return this._value; }
   @Tracked() set value(v: string) { this._value = v; }
 
-  constructor(tracker: DirtyTracker) {
+  constructor(tracker: UnitOfWork) {
     super(tracker);
   }
 }
 
-// ---- DirtyTrackedObject events ----
+// ---- Entity events ----
 
-describe("DirtyTrackedObject.changed", () => {
+describe("Entity.changed", () => {
   it("fires on initial write", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new SimpleModel(tracker));
     const events: string[] = [];
 
@@ -41,7 +41,7 @@ describe("DirtyTrackedObject.changed", () => {
   });
 
   it("fires during undo with swapped old/new values", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new SimpleModel(tracker));
     const newValues: string[] = [];
 
@@ -53,7 +53,7 @@ describe("DirtyTrackedObject.changed", () => {
   });
 
   it("fires during redo", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new SimpleModel(tracker));
     const newValues: string[] = [];
 
@@ -66,7 +66,7 @@ describe("DirtyTrackedObject.changed", () => {
   });
 
   it("includes property name, oldValue, and newValue", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new SimpleModel(tracker));
     const events: { property: string; oldValue: unknown; newValue: unknown }[] = [];
 
@@ -77,7 +77,7 @@ describe("DirtyTrackedObject.changed", () => {
   });
 
   it("works on setter-decorated properties too", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new SetterModel(tracker));
     const events: string[] = [];
 
@@ -88,49 +88,49 @@ describe("DirtyTrackedObject.changed", () => {
   });
 });
 
-describe("DirtyTrackedObject.trackedChanged", () => {
+describe("Entity.afterChange", () => {
   it("fires on initial write", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new SimpleModel(tracker));
     const events: string[] = [];
 
-    model.trackedChanged.subscribe(({ newValue }) => events.push(newValue as string));
+    model.afterChange.subscribe(({ newValue }) => events.push(newValue as string));
     model.value = "a";
 
     expect(events).toEqual(["a"]);
   });
 
   it("does NOT fire during undo", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new SimpleModel(tracker));
     const events: string[] = [];
 
     model.value = "a";
-    model.trackedChanged.subscribe(({ newValue }) => events.push(newValue as string));
+    model.afterChange.subscribe(({ newValue }) => events.push(newValue as string));
     tracker.undo();
 
     expect(events).toEqual([]);
   });
 
   it("does NOT fire during redo", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new SimpleModel(tracker));
     const events: string[] = [];
 
     model.value = "a";
     tracker.undo();
-    model.trackedChanged.subscribe(({ newValue }) => events.push(newValue as string));
+    model.afterChange.subscribe(({ newValue }) => events.push(newValue as string));
     tracker.redo();
 
     expect(events).toEqual([]);
   });
 
   it("works on setter-decorated properties too", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const model = tracker.construct(() => new SetterModel(tracker));
     const events: string[] = [];
 
-    model.trackedChanged.subscribe(({ newValue }) => events.push(newValue as string));
+    model.afterChange.subscribe(({ newValue }) => events.push(newValue as string));
     model.value = "x";
     tracker.undo();
     tracker.redo();
@@ -143,7 +143,7 @@ describe("DirtyTrackedObject.trackedChanged", () => {
 
 describe("TrackedCollection.changed", () => {
   it("fires on initial push", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const items = new TrackedCollection<string>(tracker);
     const added: string[][] = [];
 
@@ -154,7 +154,7 @@ describe("TrackedCollection.changed", () => {
   });
 
   it("fires during undo with swapped added/removed", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const items = new TrackedCollection<string>(tracker);
     const removedLog: string[][] = [];
 
@@ -166,7 +166,7 @@ describe("TrackedCollection.changed", () => {
   });
 
   it("fires during redo", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const items = new TrackedCollection<string>(tracker);
     const addedLog: string[][] = [];
 
@@ -179,49 +179,49 @@ describe("TrackedCollection.changed", () => {
   });
 });
 
-describe("TrackedCollection.trackedChanged", () => {
+describe("TrackedCollection.afterChange", () => {
   it("fires on initial push", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const items = new TrackedCollection<string>(tracker);
     const added: string[][] = [];
 
-    items.trackedChanged.subscribe((e) => added.push(e.added));
+    items.afterChange.subscribe((e) => added.push(e.added));
     items.push("a");
 
     expect(added).toEqual([["a"]]);
   });
 
   it("does NOT fire during undo", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const items = new TrackedCollection<string>(tracker);
     const events: unknown[] = [];
 
     items.push("a");
-    items.trackedChanged.subscribe((e) => events.push(e));
+    items.afterChange.subscribe((e) => events.push(e));
     tracker.undo();
 
     expect(events).toEqual([]);
   });
 
   it("does NOT fire during redo", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const items = new TrackedCollection<string>(tracker);
     const events: unknown[] = [];
 
     items.push("a");
     tracker.undo();
-    items.trackedChanged.subscribe((e) => events.push(e));
+    items.afterChange.subscribe((e) => events.push(e));
     tracker.redo();
 
     expect(events).toEqual([]);
   });
 
   it("fires once per mutation, not once per item", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const items = new TrackedCollection<string>(tracker);
     let fireCount = 0;
 
-    items.trackedChanged.subscribe(() => fireCount++);
+    items.afterChange.subscribe(() => fireCount++);
     items.push("a", "b", "c");
 
     expect(fireCount).toBe(1);

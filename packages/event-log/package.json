@@ -1,0 +1,56 @@
+{
+  "name": "@chronicle/event-log",
+  "version": "1.0.0",
+  "description": "Event log for TypeScript models: records every change as an event, with undo/redo and validation, and saves them as one batch.",
+  "type": "module",
+  "main": "./dist/prod/index.cjs",
+  "module": "./dist/prod/index.js",
+  "types": "./dist/dev/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/dev/index.d.ts",
+      "development": {
+        "import": "./dist/dev/index.js",
+        "require": "./dist/dev/index.cjs"
+      },
+      "default": {
+        "import": "./dist/prod/index.js",
+        "require": "./dist/prod/index.cjs"
+      }
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "author": "Katn30",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Katn30/chronicle",
+    "directory": "packages/event-log"
+  },
+  "keywords": [
+    "chronicle",
+    "typescript",
+    "event-log",
+    "events",
+    "event-sourcing",
+    "change-tracking",
+    "undo-redo",
+    "autosave"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch"
+  },
+  "peerDependencies": {
+    "@chronicle/core": "^1.0.0"
+  },
+  "devDependencies": {
+    "@chronicle/core": "1.0.0"
+  }
+}

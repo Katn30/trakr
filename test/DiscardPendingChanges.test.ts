@@ -1,27 +1,27 @@
 import { describe, it, expect } from "vitest";
-import { Tracker } from "../src/Tracker";
-import { DirtyTracker } from "../src/DirtyTracker";
-import { EventTracker } from "../src/EventTracker";
-import { TrackedObject } from "../src/TrackedObject";
-import { TrackedCollection } from "../src/TrackedCollection";
-import { EventTrackedCollection } from "../src/EventTrackedCollection";
-import { Tracked } from "../src/Tracked";
-import { EventTracked } from "../src/EventTracked";
-import { State } from "../src/State";
-import { AutoId } from "../src/ExternallyAssigned";
+import { Tracker } from "../packages/core/src/Tracker";
+import { UnitOfWork } from "../packages/unit-of-work/src/UnitOfWork";
+import { EventLog } from "../packages/event-log/src/EventLog";
+import { TrackedObject } from "../packages/event-log/src/TrackedObject";
+import { TrackedCollection } from "../packages/core/src/TrackedCollection";
+import { EventTrackedCollection } from "../packages/event-log/src/EventTrackedCollection";
+import { Tracked } from "../packages/core/src/Tracked";
+import { EventTracked } from "../packages/event-log/src/EventTracked";
+import { State } from "../packages/unit-of-work/src/State";
+import { AutoId } from "../packages/core/src/ExternallyAssigned";
 
 import { emitted, pendingIds } from "./eventHelpers";
-import { DirtyTrackedObject } from "../src/DirtyTrackedObject";
+import { Entity } from "../packages/unit-of-work/src/Entity";
 // ---- Models ----
 
-class ItemModel extends DirtyTrackedObject {
+class ItemModel extends Entity {
   @Tracked()
   accessor name: string = "";
 
   @Tracked()
   accessor value: number = 0;
 
-  constructor(tracker: DirtyTracker) {
+  constructor(tracker: UnitOfWork) {
     super(tracker);
   }
 }
@@ -30,13 +30,13 @@ class EventItemModel extends TrackedObject {
   @AutoId
   id: number = 0;
 
-  @EventTracked(undefined, undefined, { eventType: "ItemChanged" })
+  @EventTracked()
   accessor name: string = "";
 
-  @EventTracked(undefined, undefined, { eventType: "ItemChanged" })
+  @EventTracked()
   accessor value: number = 0;
 
-  constructor(tracker: EventTracker) {
+  constructor(tracker: EventLog) {
     super(tracker);
   }
 }
@@ -45,10 +45,10 @@ class EventItemModel extends TrackedObject {
 
 describe("discardPendingChanges — Changed-state objects revert to last commit", () => {
   it("reverts a single property to its committed value", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const item = tracker.construct(() => new ItemModel(tracker));
     item.name = "committed";
-    tracker.onCommit();
+    tracker._onCommit();
 
     item.name = "pending";
     tracker.discardPendingChanges();
@@ -57,12 +57,12 @@ describe("discardPendingChanges — Changed-state objects revert to last commit"
   });
 
   it("reverts multiple properties on multiple objects", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const a = tracker.construct(() => new ItemModel(tracker));
     const b = tracker.construct(() => new ItemModel(tracker));
     a.name = "A-committed";
     b.name = "B-committed";
-    tracker.onCommit();
+    tracker._onCommit();
 
     a.name = "A-pending";
     b.name = "B-pending";
@@ -73,19 +73,19 @@ describe("discardPendingChanges — Changed-state objects revert to last commit"
   });
 
   it("leaves all objects in Unchanged state", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const item = tracker.construct(() => new ItemModel(tracker));
     item.name = "committed";
-    tracker.onCommit();
+    tracker._onCommit();
 
     item.name = "pending";
     tracker.discardPendingChanges();
 
-    expect(item.trakrState).toBe(State.Unchanged);
+    expect(item.chronicleState).toBe(State.Unchanged);
   });
 
   it("reverts changes made without a prior commit (falls back to construction defaults)", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const item = tracker.construct(() => new ItemModel(tracker));
 
     item.name = "pending";
@@ -94,46 +94,46 @@ describe("discardPendingChanges — Changed-state objects revert to last commit"
 
     expect(item.name).toBe("");
     expect(item.value).toBe(0);
-    expect(item.trakrState).toBe(State.Unchanged);
+    expect(item.chronicleState).toBe(State.Unchanged);
   });
 
   it("reverts a committed Deleted object back to Unchanged", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const item = tracker.construct(() => new ItemModel(tracker));
     const col = new TrackedCollection<ItemModel>(tracker, [item]);
-    tracker.onCommit();
+    tracker._onCommit();
 
     col.remove(item);
-    expect(item.trakrState).toBe(State.Deleted);
+    expect(item.chronicleState).toBe(State.Deleted);
 
     tracker.discardPendingChanges();
 
-    expect(item.trakrState).toBe(State.Unchanged);
-    expect(tracker.trackedObjects).toContain(item);
+    expect(item.chronicleState).toBe(State.Unchanged);
+    expect(tracker._trackedObjects).toContain(item);
   });
 });
 
 // ---- Insert-state removal ----
 
-describe("discardPendingChanges — Insert-state objects are removed from trackedObjects", () => {
+describe("discardPendingChanges — Insert-state objects are removed from _trackedObjects", () => {
   it("removes an object that was pushed to a collection after the last commit", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const col = new TrackedCollection<ItemModel>(tracker);
-    tracker.onCommit();
+    tracker._onCommit();
 
     const newItem = tracker.new(() => new ItemModel(tracker));
     col.push(newItem);
-    expect(newItem.trakrState).toBe(State.Insert);
+    expect(newItem.chronicleState).toBe(State.Insert);
 
     tracker.discardPendingChanges();
 
-    expect(tracker.trackedObjects).not.toContain(newItem);
+    expect(tracker._trackedObjects).not.toContain(newItem);
   });
 
   it("removes multiple Insert-state objects", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const col = new TrackedCollection<ItemModel>(tracker);
-    tracker.onCommit();
+    tracker._onCommit();
 
     const a = tracker.new(() => new ItemModel(tracker));
     const b = tracker.new(() => new ItemModel(tracker));
@@ -142,34 +142,34 @@ describe("discardPendingChanges — Insert-state objects are removed from tracke
 
     tracker.discardPendingChanges();
 
-    expect(tracker.trackedObjects).not.toContain(a);
-    expect(tracker.trackedObjects).not.toContain(b);
+    expect(tracker._trackedObjects).not.toContain(a);
+    expect(tracker._trackedObjects).not.toContain(b);
   });
 
   it("removes an Insert-state object when no commit has happened yet", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const col = new TrackedCollection<ItemModel>(tracker);
     const item = tracker.new(() => new ItemModel(tracker));
     col.push(item);
-    expect(item.trakrState).toBe(State.Insert);
+    expect(item.chronicleState).toBe(State.Insert);
 
     tracker.discardPendingChanges();
 
-    expect(tracker.trackedObjects).not.toContain(item);
+    expect(tracker._trackedObjects).not.toContain(item);
   });
 
-  it("keeps committed (Unchanged) objects in trackedObjects", () => {
-    const tracker = new DirtyTracker();
+  it("keeps committed (Unchanged) objects in _trackedObjects", () => {
+    const tracker = new UnitOfWork();
     const committed = tracker.construct(() => new ItemModel(tracker));
     const col = new TrackedCollection<ItemModel>(tracker, [committed]);
-    tracker.onCommit();
+    tracker._onCommit();
 
     const newItem = tracker.new(() => new ItemModel(tracker));
     col.push(newItem);
 
     tracker.discardPendingChanges();
 
-    expect(tracker.trackedObjects).toContain(committed);
+    expect(tracker._trackedObjects).toContain(committed);
   });
 });
 
@@ -177,9 +177,9 @@ describe("discardPendingChanges — Insert-state objects are removed from tracke
 
 describe("discardPendingChanges — isDirty is false after the call", () => {
   it("isDirty becomes false after discarding pending property changes", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const item = tracker.construct(() => new ItemModel(tracker));
-    tracker.onCommit();
+    tracker._onCommit();
 
     item.name = "dirty";
     expect(tracker.isDirty).toBe(true);
@@ -190,7 +190,7 @@ describe("discardPendingChanges — isDirty is false after the call", () => {
   });
 
   it("isDirty is false after discarding without a prior commit", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const item = tracker.construct(() => new ItemModel(tracker));
 
     item.name = "pending";
@@ -200,9 +200,9 @@ describe("discardPendingChanges — isDirty is false after the call", () => {
   });
 
   it("isDirty is false when called on an already-clean tracker", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     tracker.construct(() => new ItemModel(tracker));
-    tracker.onCommit();
+    tracker._onCommit();
 
     tracker.discardPendingChanges();
 
@@ -214,9 +214,9 @@ describe("discardPendingChanges — isDirty is false after the call", () => {
 
 describe("discardPendingChanges — isDirtyChanged fires with false", () => {
   it("fires isDirtyChanged with false when the tracker was dirty", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const item = tracker.construct(() => new ItemModel(tracker));
-    tracker.onCommit();
+    tracker._onCommit();
     item.name = "pending";
 
     const fired: boolean[] = [];
@@ -228,9 +228,9 @@ describe("discardPendingChanges — isDirtyChanged fires with false", () => {
   });
 
   it("does not fire isDirtyChanged when tracker was already clean", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     tracker.construct(() => new ItemModel(tracker));
-    tracker.onCommit();
+    tracker._onCommit();
 
     const fired: boolean[] = [];
     tracker.isDirtyChanged.subscribe((v) => fired.push(v));
@@ -241,9 +241,9 @@ describe("discardPendingChanges — isDirtyChanged fires with false", () => {
   });
 
   it("a beforeunload-style subscriber sees isDirty as false synchronously after the call", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const item = tracker.construct(() => new ItemModel(tracker));
-    tracker.onCommit();
+    tracker._onCommit();
     item.name = "pending";
 
     let seenDirty: boolean | undefined;
@@ -261,9 +261,9 @@ describe("discardPendingChanges — isDirtyChanged fires with false", () => {
 
 describe("discardPendingChanges — undo/redo history is cleared", () => {
   it("canUndo is false after discarding", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const item = tracker.construct(() => new ItemModel(tracker));
-    tracker.onCommit();
+    tracker._onCommit();
 
     item.name = "pending";
     tracker.discardPendingChanges();
@@ -272,7 +272,7 @@ describe("discardPendingChanges — undo/redo history is cleared", () => {
   });
 
   it("canRedo is false after discarding", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const item = tracker.construct(() => new ItemModel(tracker));
 
     item.name = "a";
@@ -285,12 +285,12 @@ describe("discardPendingChanges — undo/redo history is cleared", () => {
   });
 
   it("pre-commit undo history is also cleared", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const item = tracker.construct(() => new ItemModel(tracker));
 
     item.name = "v1";
     item.name = "v2";
-    tracker.onCommit();
+    tracker._onCommit();
     expect(tracker.canUndo).toBe(true);
 
     tracker.discardPendingChanges();
@@ -303,9 +303,9 @@ describe("discardPendingChanges — undo/redo history is cleared", () => {
 
 describe("discardPendingChanges — does not assign server IDs", () => {
   it("does not modify the @AutoId field on any object", () => {
-    const tracker = new EventTracker();
+    const tracker = new EventLog();
     const item = tracker.new(() => new EventItemModel(tracker));
-    const col = new EventTrackedCollection<EventItemModel>(tracker);
+    const col = new EventTrackedCollection<EventItemModel>(tracker, "items");
     col.push(item);
 
     tracker.discardPendingChanges();
@@ -315,14 +315,14 @@ describe("discardPendingChanges — does not assign server IDs", () => {
   });
 });
 
-// ---- EventTracker specifics ----
+// ---- EventLog specifics ----
 
-describe("EventTracker.discardPendingChanges — event state is cleared", () => {
+describe("EventLog.discardPendingChanges — event state is cleared", () => {
   it("generateEvents() returns [] after discarding pending changes", () => {
-    const tracker = new EventTracker();
+    const tracker = new EventLog();
     const item = tracker.construct(() => new EventItemModel(tracker));
     item.name = "committed";
-    tracker.onCommit(pendingIds(tracker));
+    tracker._onCommit(pendingIds(tracker));
 
     item.name = "pending";
     tracker.discardPendingChanges();
@@ -331,9 +331,9 @@ describe("EventTracker.discardPendingChanges — event state is cleared", () => 
   });
 
   it("generateEvents() returns [] after discarding an Insert-state object", () => {
-    const tracker = new EventTracker();
-    const col = new EventTrackedCollection<EventItemModel>(tracker);
-    tracker.onCommit(pendingIds(tracker));
+    const tracker = new EventLog();
+    const col = new EventTrackedCollection<EventItemModel>(tracker, "items");
+    tracker._onCommit(pendingIds(tracker));
 
     const newItem = tracker.new(() => new EventItemModel(tracker));
     col.push(newItem);
@@ -343,10 +343,10 @@ describe("EventTracker.discardPendingChanges — event state is cleared", () => 
     expect(emitted(tracker)).toEqual([]);
   });
 
-  it("isDirty is false and isDirtyChanged fires on EventTracker too", () => {
-    const tracker = new EventTracker();
+  it("isDirty is false and isDirtyChanged fires on EventLog too", () => {
+    const tracker = new EventLog();
     const item = tracker.construct(() => new EventItemModel(tracker));
-    tracker.onCommit(pendingIds(tracker));
+    tracker._onCommit(pendingIds(tracker));
     item.name = "pending";
 
     const fired: boolean[] = [];

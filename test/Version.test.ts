@@ -1,36 +1,36 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { Tracker } from "../src/Tracker";
-import { DirtyTracker } from "../src/DirtyTracker";
-import { DirtyTrackedObject } from "../src/DirtyTrackedObject";
-import { Tracked } from "../src/Tracked";
+import { Tracker } from "../packages/core/src/Tracker";
+import { UnitOfWork } from "../packages/unit-of-work/src/UnitOfWork";
+import { Entity } from "../packages/unit-of-work/src/Entity";
+import { Tracked } from "../packages/core/src/Tracked";
 
-class PersonModel extends DirtyTrackedObject {
+class PersonModel extends Entity {
   @Tracked()
   accessor name: string = "";
 
   @Tracked()
   accessor age: number = 0;
 
-  constructor(tracker: DirtyTracker) {
+  constructor(tracker: UnitOfWork) {
     super(tracker);
   }
 }
 
-class CoalescePersonModel extends DirtyTrackedObject {
+class CoalescePersonModel extends Entity {
   @Tracked(undefined, undefined, { coalesceWithin: 10_000 })
   accessor name: string = "";
 
-  constructor(tracker: DirtyTracker) {
+  constructor(tracker: UnitOfWork) {
     super(tracker);
   }
 }
 
 describe("Tracker.version", () => {
-  let tracker: DirtyTracker;
+  let tracker: UnitOfWork;
   let person: PersonModel;
 
   beforeEach(() => {
-    tracker = new DirtyTracker();
+    tracker = new UnitOfWork();
     person = tracker.construct(() => new PersonModel(tracker));
   });
 
@@ -50,7 +50,7 @@ describe("Tracker.version", () => {
   });
 
   it("increments on every write even when auto-coalescing into the same undo operation", () => {
-    const t = new DirtyTracker();
+    const t = new UnitOfWork();
     const p = t.construct(() => new CoalescePersonModel(t));
     p.name = "Al";
     p.name = "Alice";
@@ -111,35 +111,35 @@ describe("Tracker.version", () => {
   });
 });
 
-describe("Tracker.versionChanged", () => {
-  let tracker: DirtyTracker;
+describe("Tracker.changed", () => {
+  let tracker: UnitOfWork;
   let person: PersonModel;
 
   beforeEach(() => {
-    tracker = new DirtyTracker();
+    tracker = new UnitOfWork();
     person = tracker.construct(() => new PersonModel(tracker));
   });
 
   it("fires with the new version when a new operation is pushed", () => {
     const handler = vi.fn();
-    tracker.versionChanged.subscribe(handler);
+    tracker.changed.subscribe(handler);
 
     person.name = "Alice";
 
     expect(handler).toHaveBeenCalledTimes(1);
-    expect(handler).toHaveBeenCalledWith(1);
+    expect(handler).toHaveBeenCalledWith({ version: 1 });
   });
 
   it("fires with the new version on undo()", () => {
     person.name = "Alice";
 
     const handler = vi.fn();
-    tracker.versionChanged.subscribe(handler);
+    tracker.changed.subscribe(handler);
 
     tracker.undo();
 
     expect(handler).toHaveBeenCalledTimes(1);
-    expect(handler).toHaveBeenCalledWith(0);
+    expect(handler).toHaveBeenCalledWith({ version: 0 });
   });
 
   it("fires with the new version on redo()", () => {
@@ -147,17 +147,32 @@ describe("Tracker.versionChanged", () => {
     tracker.undo();
 
     const handler = vi.fn();
-    tracker.versionChanged.subscribe(handler);
+    tracker.changed.subscribe(handler);
 
     tracker.redo();
 
     expect(handler).toHaveBeenCalledTimes(1);
-    expect(handler).toHaveBeenCalledWith(1);
+    expect(handler).toHaveBeenCalledWith({ version: 1 });
+  });
+
+  it("fires once the operation is recorded: isDirty and canCommit are already up to date", () => {
+    const seen: boolean[] = [];
+    tracker.changed.subscribe(() => seen.push(tracker.isDirty, tracker.canCommit));
+    person.name = "Alice";
+    expect(seen).toEqual([true, true]);
+  });
+
+  it("does not fire for the writes of a constructor run by tracker.new()", () => {
+    const handler = vi.fn();
+    tracker.changed.subscribe(handler);
+    tracker.new(() => { const p = new PersonModel(tracker); p.name = "draft"; return p; });
+    expect(handler).not.toHaveBeenCalled();
+    expect(tracker.version).toBe(0);
   });
 
   it("does not fire when undo() is a no-op", () => {
     const handler = vi.fn();
-    tracker.versionChanged.subscribe(handler);
+    tracker.changed.subscribe(handler);
 
     tracker.undo();
 
@@ -168,7 +183,7 @@ describe("Tracker.versionChanged", () => {
     person.name = "Alice";
 
     const handler = vi.fn();
-    tracker.versionChanged.subscribe(handler);
+    tracker.changed.subscribe(handler);
 
     tracker.redo();
 
@@ -176,10 +191,10 @@ describe("Tracker.versionChanged", () => {
   });
 
   it("fires for every write including auto-coalesced ones — version increments each time", () => {
-    const t = new DirtyTracker();
+    const t = new UnitOfWork();
     const p = t.construct(() => new CoalescePersonModel(t));
     const received: number[] = [];
-    t.versionChanged.subscribe((v) => received.push(v));
+    t.changed.subscribe(({ version }) => received.push(version));
 
     p.name = "Al";    // new operation → version becomes 1
     p.name = "Alice"; // coalesced into same undo op → version becomes 2
@@ -188,20 +203,20 @@ describe("Tracker.versionChanged", () => {
   });
 
   it("fires on every write even when auto-coalesced — model value changed", () => {
-    const t = new DirtyTracker();
+    const t = new UnitOfWork();
     const p = t.construct(() => new CoalescePersonModel(t));
     const handler = vi.fn();
-    t.versionChanged.subscribe(handler);
+    t.changed.subscribe(handler);
 
-    p.name = "Al";    // first write — new operation, versionChanged fires
-    p.name = "Alice"; // coalesced — model updated, versionChanged must still fire
+    p.name = "Al";    // first write — new operation, changed fires
+    p.name = "Alice"; // coalesced — model updated, changed must still fire
 
     expect(handler).toHaveBeenCalledTimes(2);
   });
 
   it("passes the correct value for each sequential operation", () => {
     const received: number[] = [];
-    tracker.versionChanged.subscribe((v) => received.push(v));
+    tracker.changed.subscribe(({ version }) => received.push(version));
 
     person.name = "Alice";
     person.age = 30;
@@ -213,16 +228,16 @@ describe("Tracker.versionChanged", () => {
 });
 
 describe("Tracker.version with session.rollback()", () => {
-  let tracker: DirtyTracker;
+  let tracker: UnitOfWork;
   let person: PersonModel;
 
   beforeEach(() => {
-    tracker = new DirtyTracker();
+    tracker = new UnitOfWork();
     person = tracker.construct(() => new PersonModel(tracker));
   });
 
   it("decrements by the number of operations rolled back", () => {
-    const session = tracker.startSession();
+    const session = tracker._startSession();
     person.name = "Alice";
     person.age = 30;
     session.rollback();
@@ -230,25 +245,25 @@ describe("Tracker.version with session.rollback()", () => {
     expect(tracker.version).toBe(0);
   });
 
-  it("fires versionChanged once after rollback when operations were rolled back", () => {
-    const session = tracker.startSession();
+  it("fires changed once after rollback when operations were rolled back", () => {
+    const session = tracker._startSession();
     person.name = "Alice";
     person.age = 30;
 
     const handler = vi.fn();
-    tracker.versionChanged.subscribe(handler);
+    tracker.changed.subscribe(handler);
 
     session.rollback();
 
     expect(handler).toHaveBeenCalledTimes(1);
-    expect(handler).toHaveBeenCalledWith(0);
+    expect(handler).toHaveBeenCalledWith({ version: 0 });
   });
 
-  it("does not fire versionChanged when rollback has nothing to revert", () => {
-    const session = tracker.startSession();
+  it("does not fire changed when rollback has nothing to revert", () => {
+    const session = tracker._startSession();
 
     const handler = vi.fn();
-    tracker.versionChanged.subscribe(handler);
+    tracker.changed.subscribe(handler);
 
     session.rollback();
 
@@ -256,7 +271,7 @@ describe("Tracker.version with session.rollback()", () => {
   });
 
   it("version is unaffected by session.end() — increments already happened per operation", () => {
-    const session = tracker.startSession();
+    const session = tracker._startSession();
     person.name = "Alice";
     person.age = 30;
     session.end();

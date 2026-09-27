@@ -1,14 +1,14 @@
 import { describe, it, expect, vi } from "vitest";
-import { DirtyTrackedObject } from "../src/DirtyTrackedObject";
-import { Tracker } from "../src/Tracker";
-import { DirtyTracker } from "../src/DirtyTracker";
-import { Tracked } from "../src/Tracked";
-import { TrackedCollection } from "../src/TrackedCollection";
-import { State } from "../src/State";
+import { Entity } from "../packages/unit-of-work/src/Entity";
+import { Tracker } from "../packages/core/src/Tracker";
+import { UnitOfWork } from "../packages/unit-of-work/src/UnitOfWork";
+import { Tracked } from "../packages/core/src/Tracked";
+import { TrackedCollection } from "../packages/core/src/TrackedCollection";
+import { State } from "../packages/unit-of-work/src/State";
 
 // ---- Models ----
 
-class PersonModel extends DirtyTrackedObject {
+class PersonModel extends Entity {
   @Tracked()
   accessor firstName: string = "";
 
@@ -18,18 +18,18 @@ class PersonModel extends DirtyTrackedObject {
   @Tracked((_, v: string) => (!v ? "Email is required" : undefined))
   accessor email: string = "";
 
-  constructor(tracker: DirtyTracker) {
+  constructor(tracker: UnitOfWork) {
     super(tracker);
   }
 }
 
-class OrderModel extends DirtyTrackedObject {
+class OrderModel extends Entity {
   @Tracked()
   accessor status: string = "";
 
   readonly lines: TrackedCollection<string>;
 
-  constructor(tracker: DirtyTracker) {
+  constructor(tracker: UnitOfWork) {
     super(tracker);
     this.lines = new TrackedCollection<string>(tracker);
   }
@@ -39,10 +39,10 @@ class OrderModel extends DirtyTrackedObject {
 
 describe("Tracker – session.end()", () => {
   it("merges multiple property changes into one undo step", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
 
-    const session = tracker.startSession();
+    const session = tracker._startSession();
     person.firstName = "Alice";
     person.lastName = "Smith";
     person.email = "alice@example.com";
@@ -59,10 +59,10 @@ describe("Tracker – session.end()", () => {
   });
 
   it("produces exactly one undo step regardless of how many changes were made", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
 
-    const session = tracker.startSession();
+    const session = tracker._startSession();
     person.firstName = "A";
     person.lastName = "B";
     person.email = "c@d.com";
@@ -73,10 +73,10 @@ describe("Tracker – session.end()", () => {
   });
 
   it("redo after undo restores all coalesced changes", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
 
-    const session = tracker.startSession();
+    const session = tracker._startSession();
     person.firstName = "Alice";
     person.lastName = "Smith";
     session.end();
@@ -89,12 +89,12 @@ describe("Tracker – session.end()", () => {
   });
 
   it("changes before startComposing remain as separate undo steps", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
 
     person.email = "before@example.com";
 
-    const session = tracker.startSession();
+    const session = tracker._startSession();
     person.firstName = "Alice";
     person.lastName = "Smith";
     session.end();
@@ -111,10 +111,10 @@ describe("Tracker – session.end()", () => {
   });
 
   it("handles a single change inside the session window (no merge needed)", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
 
-    const session = tracker.startSession();
+    const session = tracker._startSession();
     person.firstName = "Alice";
     session.end();
 
@@ -124,23 +124,23 @@ describe("Tracker – session.end()", () => {
   });
 
   it("with no changes inside the window, undo stack is unaffected", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     tracker.construct(() => new PersonModel(tracker));
 
-    const session = tracker.startSession();
+    const session = tracker._startSession();
     session.end();
 
     expect(tracker.canUndo).toBe(false);
   });
 
   it("works across multiple objects", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const { person, order } = tracker.construct(() => ({
       person: new PersonModel(tracker),
       order: new OrderModel(tracker),
     }));
 
-    const session = tracker.startSession();
+    const session = tracker._startSession();
     person.firstName = "Alice";
     order.status = "draft";
     session.end();
@@ -153,10 +153,10 @@ describe("Tracker – session.end()", () => {
   });
 
   it("works with collection mutations", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const order = tracker.construct(() => new OrderModel(tracker));
 
-    const session = tracker.startSession();
+    const session = tracker._startSession();
     order.status = "draft";
     order.lines.push("line-1");
     order.lines.push("line-2");
@@ -169,13 +169,13 @@ describe("Tracker – session.end()", () => {
     expect(tracker.canUndo).toBe(false);
   });
 
-  it("second call to startSession while a session is active returns the same session", () => {
-    const tracker = new DirtyTracker();
+  it("second call to _startSession while a session is active returns the same session", () => {
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
 
-    const session = tracker.startSession();
+    const session = tracker._startSession();
     person.firstName = "Alice";
-    const session2 = tracker.startSession(); // no-op — returns same session
+    const session2 = tracker._startSession(); // no-op — returns same session
     expect(session2).toBe(session);
     person.lastName = "Smith";
     session.end();
@@ -188,11 +188,11 @@ describe("Tracker – session.end()", () => {
   });
 
   it("tracker is dirty after session.end() when changes were made", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     tracker.construct(() => new PersonModel(tracker));
-    const person = tracker.trackedObjects[0] as PersonModel;
+    const person = tracker._trackedObjects[0] as PersonModel;
 
-    const session = tracker.startSession();
+    const session = tracker._startSession();
     person.firstName = "Alice";
     session.end();
 
@@ -200,12 +200,12 @@ describe("Tracker – session.end()", () => {
   });
 
   it("isDirty is preserved after session.end() with no changes when tracker was already dirty", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
 
     person.firstName = "Alice"; // tracker is dirty
 
-    const session = tracker.startSession();
+    const session = tracker._startSession();
     session.end(); // no changes inside
 
     expect(tracker.isDirty).toBe(true);
@@ -213,10 +213,10 @@ describe("Tracker – session.end()", () => {
   });
 
   it("single-change session: canRedo is false after session.end() when session undo cleared redo", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
 
-    const session = tracker.startSession();
+    const session = tracker._startSession();
     person.firstName = "Alice";
     tracker.undo(); // firstName undone → in redo; composed will have 0 ops, but this tests the single-op branch via a prior state
     person.lastName = "Smith"; // one op remains after undo clears redo
@@ -230,10 +230,10 @@ describe("Tracker – session.end()", () => {
 
 describe("Tracker – undo/redo during an active composing session", () => {
   it("undo works inside the session — undone change is excluded from the merged step", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
 
-    const session = tracker.startSession();
+    const session = tracker._startSession();
     person.firstName = "Alice";
     person.lastName = "Smith";
     tracker.undo(); // undo lastName — only firstName remains applied
@@ -248,10 +248,10 @@ describe("Tracker – undo/redo during an active composing session", () => {
   });
 
   it("session.end() discards redo entries generated inside the session", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
 
-    const session = tracker.startSession();
+    const session = tracker._startSession();
     person.firstName = "Alice";
     tracker.undo(); // firstName undone → sits in redo
     session.end(); // session closed with no net changes
@@ -261,10 +261,10 @@ describe("Tracker – undo/redo during an active composing session", () => {
   });
 
   it("session.rollback() discards redo entries generated inside the session", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
 
-    const session = tracker.startSession();
+    const session = tracker._startSession();
     person.firstName = "Alice";
     tracker.undo(); // firstName undone → sits in redo
     session.rollback();
@@ -275,13 +275,13 @@ describe("Tracker – undo/redo during an active composing session", () => {
   });
 
   it("pre-existing redo entries are preserved when the session makes no new writes", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
 
     person.firstName = "Alice";
     tracker.undo(); // firstName in redo
 
-    const session = tracker.startSession();
+    const session = tracker._startSession();
     // no writes inside
     session.end();
 
@@ -296,10 +296,10 @@ describe("Tracker – undo/redo during an active composing session", () => {
 
 describe("Tracker – session.rollback()", () => {
   it("reverts all changes made since startComposing", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
 
-    const session = tracker.startSession();
+    const session = tracker._startSession();
     person.firstName = "Alice";
     person.lastName = "Smith";
     person.email = "alice@example.com";
@@ -311,10 +311,10 @@ describe("Tracker – session.rollback()", () => {
   });
 
   it("does not add any entry to the undo stack", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
 
-    const session = tracker.startSession();
+    const session = tracker._startSession();
     person.firstName = "Alice";
     session.rollback();
 
@@ -322,10 +322,10 @@ describe("Tracker – session.rollback()", () => {
   });
 
   it("tracker is not dirty after session.rollback() when it was clean before", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
 
-    const session = tracker.startSession();
+    const session = tracker._startSession();
     person.firstName = "Alice";
     session.rollback();
 
@@ -333,12 +333,12 @@ describe("Tracker – session.rollback()", () => {
   });
 
   it("pre-existing undo steps are preserved after session.rollback()", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
 
     person.email = "before@example.com";
 
-    const session = tracker.startSession();
+    const session = tracker._startSession();
     person.firstName = "Alice";
     person.lastName = "Smith";
     session.rollback();
@@ -353,12 +353,12 @@ describe("Tracker – session.rollback()", () => {
   });
 
   it("with no changes inside the window, rollback is a no-op", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
 
     person.firstName = "Alice";
 
-    const session = tracker.startSession();
+    const session = tracker._startSession();
     session.rollback();
 
     expect(person.firstName).toBe("Alice");
@@ -366,10 +366,10 @@ describe("Tracker – session.rollback()", () => {
   });
 
   it("reverts collection mutations", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const order = tracker.construct(() => new OrderModel(tracker));
 
-    const session = tracker.startSession();
+    const session = tracker._startSession();
     order.status = "draft";
     order.lines.push("line-1");
     order.lines.push("line-2");
@@ -381,7 +381,7 @@ describe("Tracker – session.rollback()", () => {
   });
 
   it("restores validation state after rollback", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     // Set the initial email during construction (suppressed) so the tracker starts clean.
     const person = tracker.construct(() => {
       const p = new PersonModel(tracker);
@@ -391,7 +391,7 @@ describe("Tracker – session.rollback()", () => {
     expect(tracker.isValid).toBe(true);
     expect(tracker.canUndo).toBe(false);
 
-    const session = tracker.startSession();
+    const session = tracker._startSession();
     person.email = ""; // makes invalid — first tracked write to this property
     expect(tracker.isValid).toBe(false);
     session.rollback();
@@ -405,94 +405,94 @@ describe("Tracker – session.rollback()", () => {
 
 describe("TrackerSession – ITrackerContext: scoped isDirty / isValid / canCommit", () => {
   it("isDirty is false initially with a scope", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
-    const session = tracker.startSession([[person, ["firstName"]]]);
+    const session = tracker._startSession([[person, ["firstName"]]]);
     expect(session.isDirty).toBe(false);
   });
 
   it("isDirty becomes true when a scoped property is written", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
-    const session = tracker.startSession([[person, ["firstName"]]]);
+    const session = tracker._startSession([[person, ["firstName"]]]);
     person.firstName = "Alice";
     expect(session.isDirty).toBe(true);
   });
 
   it("isDirty stays false when an out-of-scope property is written", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
-    const session = tracker.startSession([[person, ["firstName"]]]);
+    const session = tracker._startSession([[person, ["firstName"]]]);
     person.lastName = "Smith";
     expect(session.isDirty).toBe(false);
   });
 
   it("isDirty defaults to false when no scope is provided", () => {
-    const tracker = new DirtyTracker();
-    const session = tracker.startSession();
+    const tracker = new UnitOfWork();
+    const session = tracker._startSession();
     expect(session.isDirty).toBe(false);
   });
 
   it("isValid is false when a scoped property has a validation error", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
-    const session = tracker.startSession([[person, ["email"]]]);
+    const session = tracker._startSession([[person, ["email"]]]);
     // email starts empty — validator fires during construct
     expect(session.isValid).toBe(false);
   });
 
   it("isValid is true when all scoped properties pass validation", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => {
       const p = new PersonModel(tracker);
       p.email = "valid@example.com";
       return p;
     });
-    const session = tracker.startSession([[person, ["email"]]]);
+    const session = tracker._startSession([[person, ["email"]]]);
     expect(session.isValid).toBe(true);
   });
 
   it("isValid ignores validation errors on out-of-scope properties", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
     // email is invalid but not in scope
-    const session = tracker.startSession([[person, ["firstName"]]]);
+    const session = tracker._startSession([[person, ["firstName"]]]);
     expect(session.isValid).toBe(true);
   });
 
   it("isValid defaults to true when no scope is provided", () => {
-    const tracker = new DirtyTracker();
-    const session = tracker.startSession();
+    const tracker = new UnitOfWork();
+    const session = tracker._startSession();
     expect(session.isValid).toBe(true);
   });
 
   it("canCommit is true when isDirty and isValid", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => {
       const p = new PersonModel(tracker);
       p.email = "valid@example.com";
       return p;
     });
-    const session = tracker.startSession([[person, ["firstName", "email"]]]);
+    const session = tracker._startSession([[person, ["firstName", "email"]]]);
     person.firstName = "Alice";
     expect(session.canCommit).toBe(true);
   });
 
   it("canCommit is false when not dirty", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => {
       const p = new PersonModel(tracker);
       p.email = "valid@example.com";
       return p;
     });
-    const session = tracker.startSession([[person, ["firstName"]]]);
+    const session = tracker._startSession([[person, ["firstName"]]]);
     expect(session.canCommit).toBe(false);
   });
 
   it("canCommit is false when dirty but invalid", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
-    const session = tracker.startSession([[person, ["email"]]]);
+    const session = tracker._startSession([[person, ["email"]]]);
     person.email = "x";
     person.email = "";  // back to invalid
     expect(session.isDirty).toBe(true);
@@ -501,44 +501,44 @@ describe("TrackerSession – ITrackerContext: scoped isDirty / isValid / canComm
   });
 });
 
-describe("TrackerSession – ITrackerContext: trackedObjects / deletedObjects", () => {
-  it("trackedObjects returns the scoped objects", () => {
-    const tracker = new DirtyTracker();
+describe("TrackerSession – ITrackerContext: _trackedObjects / deletedObjects", () => {
+  it("_trackedObjects returns the scoped objects", () => {
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
-    const session = tracker.startSession([[person, ["firstName"]]]);
+    const session = tracker._startSession([[person, ["firstName"]]]);
     expect(session.trackedObjects).toEqual([person]);
   });
 
-  it("trackedObjects returns empty array when no scope", () => {
-    const tracker = new DirtyTracker();
-    const session = tracker.startSession();
+  it("_trackedObjects returns empty array when no scope", () => {
+    const tracker = new UnitOfWork();
+    const session = tracker._startSession();
     expect(session.trackedObjects).toEqual([]);
   });
 
   it("deletedObjects returns scoped objects in Deleted state", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
     const people = new TrackedCollection<PersonModel>(tracker, [person]);
-    tracker.onCommit(); // person → Unchanged so removal marks it Deleted
-    const session = tracker.startSession([[person, ["firstName"]]]);
+    tracker._onCommit(); // person → Unchanged so removal marks it Deleted
+    const session = tracker._startSession([[person, ["firstName"]]]);
     people.remove(person);
-    expect(person.trakrState).toBe(State.Deleted);
+    expect(person.chronicleState).toBe(State.Deleted);
     expect(session.deletedObjects).toEqual([person]);
   });
 
   it("deletedObjects is empty when no scoped object is deleted", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
-    const session = tracker.startSession([[person, ["firstName"]]]);
+    const session = tracker._startSession([[person, ["firstName"]]]);
     expect(session.deletedObjects).toEqual([]);
   });
 });
 
 describe("TrackerSession – ITrackerContext: canUndo / canRedo / undo() / redo()", () => {
   it("canUndo delegates to tracker", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
-    const session = tracker.startSession();
+    const session = tracker._startSession();
     expect(session.canUndo).toBe(false);
     person.firstName = "Alice";
     session.end();
@@ -546,31 +546,31 @@ describe("TrackerSession – ITrackerContext: canUndo / canRedo / undo() / redo(
   });
 
   it("canRedo delegates to tracker", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
     person.firstName = "Alice";
     expect(tracker.canRedo).toBe(false);
     tracker.undo();
-    const session = tracker.startSession();
+    const session = tracker._startSession();
     expect(session.canRedo).toBe(true);
   });
 
   it("undo() delegates to tracker", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
     person.firstName = "Alice";
-    const session = tracker.startSession();
+    const session = tracker._startSession();
     session.undo();
     expect(person.firstName).toBe("");
     session.end();
   });
 
   it("redo() delegates to tracker", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
     person.firstName = "Alice";
     tracker.undo();
-    const session = tracker.startSession();
+    const session = tracker._startSession();
     session.redo();
     expect(person.firstName).toBe("Alice");
     session.end();
@@ -579,9 +579,9 @@ describe("TrackerSession – ITrackerContext: canUndo / canRedo / undo() / redo(
 
 describe("TrackerSession – ITrackerContext: events delegate to tracker", () => {
   it("isDirtyChanged fires when tracker dirty state changes", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
-    const session = tracker.startSession();
+    const session = tracker._startSession();
     const handler = vi.fn();
     session.isDirtyChanged.subscribe(handler);
     person.firstName = "Alice";
@@ -590,13 +590,13 @@ describe("TrackerSession – ITrackerContext: events delegate to tracker", () =>
   });
 
   it("canCommitChanged fires when tracker canCommit changes", () => {
-    const tracker = new DirtyTracker();
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => {
       const p = new PersonModel(tracker);
       p.email = "valid@example.com";
       return p;
     });
-    const session = tracker.startSession();
+    const session = tracker._startSession();
     const handler = vi.fn();
     session.canCommitChanged.subscribe(handler);
     person.firstName = "Alice";
@@ -604,14 +604,15 @@ describe("TrackerSession – ITrackerContext: events delegate to tracker", () =>
     expect(handler).toHaveBeenCalledWith(true);
   });
 
-  it("versionChanged fires on every tracked write", () => {
-    const tracker = new DirtyTracker();
+  it("changed fires on every tracked write", () => {
+    const tracker = new UnitOfWork();
     const person = tracker.construct(() => new PersonModel(tracker));
-    const session = tracker.startSession();
+    const session = tracker._startSession();
     const handler = vi.fn();
-    session.versionChanged.subscribe(handler);
+    session.changed.subscribe(handler);
     person.firstName = "Alice";
-    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler).toHaveBeenCalledWith({ version: 1 });
     session.end();
   });
+
 });

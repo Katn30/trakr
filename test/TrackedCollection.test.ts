@@ -1,29 +1,29 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { Tracker } from "../src/Tracker";
-import { DirtyTracker } from "../src/DirtyTracker";
+import { Tracker } from "../packages/core/src/Tracker";
+import { UnitOfWork } from "../packages/unit-of-work/src/UnitOfWork";
 import {
   TrackedCollection,
   TrackedCollectionChanged,
-} from "../src/TrackedCollection";
-import { DirtyTrackedObject } from "../src/DirtyTrackedObject";
-import { State } from "../src/State";
-import { Tracked } from "../src/Tracked";
+} from "../packages/core/src/TrackedCollection";
+import { Entity } from "../packages/unit-of-work/src/Entity";
+import { State } from "../packages/unit-of-work/src/State";
+import { Tracked } from "../packages/core/src/Tracked";
 
-// Simple concrete DirtyTrackedObject for splice-state tests
-class SimpleItem extends DirtyTrackedObject {
+// Simple concrete Entity for splice-state tests
+class SimpleItem extends Entity {
   @Tracked()
   accessor label: string = "";
-  constructor(tracker: DirtyTracker) {
+  constructor(tracker: UnitOfWork) {
     super(tracker);
   }
 }
 
 describe("TrackedCollection", () => {
-  let tracker: DirtyTracker;
+  let tracker: UnitOfWork;
   let collection: TrackedCollection<number>;
 
   beforeEach(() => {
-    tracker = new DirtyTracker();
+    tracker = new UnitOfWork();
     collection = new TrackedCollection<number>(tracker, [1, 2, 3]);
   });
 
@@ -40,12 +40,12 @@ describe("TrackedCollection", () => {
     });
 
     it("registers itself with the tracker", () => {
-      expect(tracker.trackedCollections).toContain(collection);
+      expect(tracker._trackedCollections).toContain(collection);
     });
 
     it("removes itself from the tracker on destroy", () => {
       collection.destroy();
-      expect(tracker.trackedCollections).not.toContain(collection);
+      expect(tracker._trackedCollections).not.toContain(collection);
     });
 
     it("is not dirty initially", () => {
@@ -272,25 +272,40 @@ describe("TrackedCollection", () => {
     });
   });
 
-  // ------------------------------------------------------------------ sort / reverse (not tracked)
+  // ------------------------------------------------------------------ sort / reverse
 
-  describe("sort / reverse (not tracked)", () => {
-    it("sort reorders items in place", () => {
+  describe("sort / reverse", () => {
+    it("sort is one undoable step with a new array", () => {
       const c = new TrackedCollection<number>(tracker, [3, 1, 2]);
-      c.sort((a, b) => a - b);
+      const before = c.collection;
+      expect(c.sort((a, b) => a - b)).toBe(c);
       expect(c.collection).toEqual([1, 2, 3]);
-      expect(tracker.isDirty).toBe(false);
+      expect(c.collection).not.toBe(before);
+      expect(tracker.canUndo).toBe(true);
+      tracker.undo();
+      expect(c.collection).toEqual([3, 1, 2]);
+      tracker.redo();
+      expect(c.collection).toEqual([1, 2, 3]);
     });
 
-    it("sort is a no-op on empty collection", () => {
+    it("sort of an empty or already sorted collection records nothing", () => {
       const empty = new TrackedCollection<number>(tracker);
       expect(empty.sort()).toBe(empty);
+      const sorted = new TrackedCollection<number>(tracker, [1, 2]);
+      sorted.sort((a, b) => a - b);
+      expect(tracker.canUndo).toBe(false);
     });
 
-    it("reverse reverses items in place", () => {
-      collection.reverse();
-      expect(collection.collection).toEqual([3, 2, 1]);
-      expect(tracker.isDirty).toBe(false);
+    it("reverse is one undoable step and fires changed and afterChange", () => {
+      const changed: number[][] = [];
+      const after: number[][] = [];
+      collection.changed.subscribe((e) => changed.push([...e.newCollection]));
+      collection.afterChange.subscribe((e) => after.push([...e.newCollection]));
+      expect(collection.reverse()).toEqual([3, 2, 1]);
+      tracker.undo();
+      expect(collection.collection).toEqual([1, 2, 3]);
+      expect(changed).toEqual([[3, 2, 1], [1, 2, 3]]);
+      expect(after).toEqual([[3, 2, 1]]);   // user steps only
     });
   });
 
@@ -510,7 +525,7 @@ describe("TrackedCollection", () => {
 
   describe("validation", () => {
     it("is valid without a validator", () => {
-      expect(collection.trakrIsValid).toBe(true);
+      expect(collection.chronicleIsValid).toBe(true);
       expect(collection.error).toBeUndefined();
     });
 
@@ -518,7 +533,7 @@ describe("TrackedCollection", () => {
       const c = new TrackedCollection<number>(tracker, [], (v) =>
         v.length === 0 ? "Required" : undefined,
       );
-      expect(c.trakrIsValid).toBe(false);
+      expect(c.chronicleIsValid).toBe(false);
       expect(c.error).toBe("Required");
     });
 
@@ -527,7 +542,7 @@ describe("TrackedCollection", () => {
         v.length === 0 ? "Required" : undefined,
       );
       c.push(1);
-      expect(c.trakrIsValid).toBe(true);
+      expect(c.chronicleIsValid).toBe(true);
       expect(c.error).toBeUndefined();
     });
 
@@ -546,13 +561,13 @@ describe("TrackedCollection", () => {
   describe("dirty state", () => {
     it("becomes clean after afterCommit", () => {
       collection.push(4);
-      tracker.onCommit();
+      tracker._onCommit();
       expect(tracker.isDirty).toBe(false);
     });
 
     it("is dirty again after further changes post-save", () => {
       collection.push(4);
-      tracker.onCommit();
+      tracker._onCommit();
       collection.push(5);
       expect(tracker.isDirty).toBe(true);
     });
@@ -561,7 +576,7 @@ describe("TrackedCollection", () => {
       const states: boolean[] = [];
       tracker.isDirtyChanged.subscribe((v) => states.push(v));
       collection.push(4);
-      tracker.onCommit();
+      tracker._onCommit();
       expect(states).toEqual([true, false]);
     });
   });
@@ -618,10 +633,10 @@ describe("TrackedCollection", () => {
 // ---- reduce / reduceRight without initialValue ----
 
 describe("TrackedCollection — reduce/reduceRight without initialValue", () => {
-  let tracker: DirtyTracker;
+  let tracker: UnitOfWork;
 
   beforeEach(() => {
-    tracker = new DirtyTracker();
+    tracker = new UnitOfWork();
   });
 
   it("reduce(fn) without initialValue uses the first element as accumulator", () => {
@@ -645,85 +660,85 @@ describe("TrackedCollection — reduce/reduceRight without initialValue", () => 
   });
 });
 
-// ---- DirtyTrackedObject items in splice ----
+// ---- Entity items in splice ----
 
-describe("TrackedCollection — DirtyTrackedObject items get correct state on splice", () => {
-  let tracker: DirtyTracker;
+describe("TrackedCollection — Entity items get correct state on splice", () => {
+  let tracker: UnitOfWork;
 
   beforeEach(() => {
-    tracker = new DirtyTracker();
+    tracker = new UnitOfWork();
   });
 
   it("item pushed to a collection is marked New", () => {
     const col = new TrackedCollection<SimpleItem>(tracker);
     const item = tracker.construct(() => new SimpleItem(tracker));
-    expect(item.trakrState).toBe(State.Unchanged);
+    expect(item.chronicleState).toBe(State.Unchanged);
 
     col.push(item);
 
-    expect(item.trakrState).toBe(State.Insert);
+    expect(item.chronicleState).toBe(State.Insert);
   });
 
   it("New item removed from a collection is marked Unchanged (treated as never existed)", () => {
     const col = new TrackedCollection<SimpleItem>(tracker);
     const item = tracker.construct(() => new SimpleItem(tracker));
     col.push(item); // → New
-    expect(item.trakrState).toBe(State.Insert);
+    expect(item.chronicleState).toBe(State.Insert);
 
     col.remove(item);
 
-    expect(item.trakrState).toBe(State.Unchanged);
-    expect(tracker.trackedObjects).not.toContain(item);
+    expect(item.chronicleState).toBe(State.Unchanged);
+    expect(tracker._trackedObjects).not.toContain(item);
   });
 
   it("committed (Unchanged) item spliced out of a collection is marked Deleted", () => {
     const item = tracker.construct(() => new SimpleItem(tracker));
     const col = new TrackedCollection<SimpleItem>(tracker, [item]);
-    tracker.onCommit(); // item remains Unchanged, collection is clean
-    expect(item.trakrState).toBe(State.Unchanged);
+    tracker._onCommit(); // item remains Unchanged, collection is clean
+    expect(item.chronicleState).toBe(State.Unchanged);
 
     col.splice(0, 1); // remove the item
 
-    expect(item.trakrState).toBe(State.Deleted);
+    expect(item.chronicleState).toBe(State.Deleted);
   });
 
   it("undo of a push restores item state to Unchanged", () => {
     const col = new TrackedCollection<SimpleItem>(tracker);
     const item = tracker.construct(() => new SimpleItem(tracker));
     col.push(item);
-    expect(item.trakrState).toBe(State.Insert);
+    expect(item.chronicleState).toBe(State.Insert);
 
     tracker.undo();
 
-    expect(item.trakrState).toBe(State.Unchanged);
+    expect(item.chronicleState).toBe(State.Unchanged);
   });
 
   it("undo of a removal restores committed item state to Deleted", () => {
     const item = tracker.construct(() => new SimpleItem(tracker));
     const col = new TrackedCollection<SimpleItem>(tracker, [item]);
-    tracker.onCommit();
+    tracker._onCommit();
     col.splice(0, 1); // → Deleted
-    expect(item.trakrState).toBe(State.Deleted);
+    expect(item.chronicleState).toBe(State.Deleted);
 
     tracker.undo();
 
-    expect(item.trakrState).toBe(State.Unchanged);
+    expect(item.chronicleState).toBe(State.Unchanged);
   });
 });
 
 // ---- Insert collapse — untracking and validity accounting ----
 
-class RequiredNameItem extends DirtyTrackedObject {
+class RequiredNameItem extends Entity {
   @Tracked((_, v: string) => v.length > 0 ? undefined : "name required")
   accessor name: string = "";
-  constructor(tracker: DirtyTracker) { super(tracker); }
+  constructor(tracker: UnitOfWork) { super(tracker); }
 }
 
 describe("TrackedCollection — Insert-remove untracks the item", () => {
-  let tracker: DirtyTracker;
+  let tracker: UnitOfWork;
 
   beforeEach(() => {
-    tracker = new DirtyTracker();
+    tracker = new UnitOfWork();
   });
 
   it("invalid Insert item removed from collection restores tracker.isValid", () => {
@@ -731,12 +746,12 @@ describe("TrackedCollection — Insert-remove untracks the item", () => {
     const item = tracker.construct(() => new RequiredNameItem(tracker));
     col.push(item);
 
-    expect(item.trakrIsValid).toBe(false);
+    expect(item.chronicleIsValid).toBe(false);
     expect(tracker.isValid).toBe(false);
 
     col.remove(item);
 
-    expect(tracker.trackedObjects).not.toContain(item);
+    expect(tracker._trackedObjects).not.toContain(item);
     expect(tracker.isValid).toBe(true);
   });
 
@@ -749,8 +764,8 @@ describe("TrackedCollection — Insert-remove untracks the item", () => {
 
     tracker.undo();
 
-    expect(tracker.trackedObjects).toContain(item);
-    expect(item.trakrState).toBe(State.Insert);
+    expect(tracker._trackedObjects).toContain(item);
+    expect(item.chronicleState).toBe(State.Insert);
     expect(tracker.isValid).toBe(false);
   });
 
@@ -762,7 +777,7 @@ describe("TrackedCollection — Insert-remove untracks the item", () => {
 
     tracker.undo();
 
-    expect(tracker.trackedObjects).not.toContain(item);
+    expect(tracker._trackedObjects).not.toContain(item);
     expect(tracker.isValid).toBe(true);
   });
 
@@ -775,8 +790,8 @@ describe("TrackedCollection — Insert-remove untracks the item", () => {
 
     tracker.redo();
 
-    expect(tracker.trackedObjects).toContain(item);
-    expect(item.trakrState).toBe(State.Insert);
+    expect(tracker._trackedObjects).toContain(item);
+    expect(item.chronicleState).toBe(State.Insert);
     expect(tracker.isValid).toBe(false);
   });
 
@@ -791,15 +806,15 @@ describe("TrackedCollection — Insert-remove untracks the item", () => {
     col.push(another);
 
     expect(tracker.isValid).toBe(true);
-    expect(tracker.trackedObjects).toEqual([another]);
+    expect(tracker._trackedObjects).toEqual([another]);
   });
 });
 
 describe("TrackedCollection — removing committed invalid items releases validity", () => {
-  let tracker: DirtyTracker;
+  let tracker: UnitOfWork;
 
   beforeEach(() => {
-    tracker = new DirtyTracker();
+    tracker = new UnitOfWork();
   });
 
   it("removing an invalid Changed item restores tracker.isValid", () => {
@@ -807,7 +822,7 @@ describe("TrackedCollection — removing committed invalid items releases validi
     const item = tracker.construct(() => new RequiredNameItem(tracker));
     item.name = "alice";
     col.push(item);
-    tracker.onCommit();
+    tracker._onCommit();
 
     item.name = "";
     expect(tracker.isValid).toBe(false);
@@ -817,18 +832,18 @@ describe("TrackedCollection — removing committed invalid items releases validi
     expect(tracker.isValid).toBe(true);
   });
 
-  it("removed invalid Changed item stays in trackedObjects as Deleted", () => {
+  it("removed invalid Changed item stays in _trackedObjects as Deleted", () => {
     const col = new TrackedCollection<RequiredNameItem>(tracker);
     const item = tracker.construct(() => new RequiredNameItem(tracker));
     item.name = "alice";
     col.push(item);
-    tracker.onCommit();
+    tracker._onCommit();
 
     item.name = "";
     col.remove(item);
 
-    expect(tracker.trackedObjects).toContain(item);
-    expect(item.trakrState).toBe(State.Deleted);
+    expect(tracker._trackedObjects).toContain(item);
+    expect(item.chronicleState).toBe(State.Deleted);
   });
 
   it("undo of removing an invalid Changed item restores invalid contribution", () => {
@@ -836,7 +851,7 @@ describe("TrackedCollection — removing committed invalid items releases validi
     const item = tracker.construct(() => new RequiredNameItem(tracker));
     item.name = "alice";
     col.push(item);
-    tracker.onCommit();
+    tracker._onCommit();
 
     item.name = "";
     col.remove(item);
@@ -844,7 +859,7 @@ describe("TrackedCollection — removing committed invalid items releases validi
 
     tracker.undo();
 
-    expect(item.trakrState).toBe(State.Changed);
+    expect(item.chronicleState).toBe(State.Changed);
     expect(tracker.isValid).toBe(false);
   });
 
@@ -853,7 +868,7 @@ describe("TrackedCollection — removing committed invalid items releases validi
     const item = tracker.construct(() => new RequiredNameItem(tracker));
     item.name = "alice";
     col.push(item);
-    tracker.onCommit();
+    tracker._onCommit();
 
     expect(tracker.isValid).toBe(true);
     col.remove(item);
