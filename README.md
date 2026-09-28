@@ -120,6 +120,10 @@ accessor due: Date = new Date();
 
 - It re-runs whenever anything it reads changes, including other properties and
   other objects: dependencies are tracked automatically.
+- **Validators never run on a half-built model.** What `construct()` / `new()`
+  create is validated once the outermost construction ends, so a validator can
+  read any part of the model its constructor builds, e.g. two collections whose
+  validators read each other, without checking that the other one exists yet.
 - `model.validationMessages` holds the message per failing property;
   `model.chronicleIsValid` says whether there is none.
 - A collection can have a validator too (its constructor's third argument),

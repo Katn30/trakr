@@ -124,8 +124,9 @@ export class TrackedCollectionBase<T> implements Array<T>, ITracked {
     this._collection = items ? [...items] : [];
     // `collection[i]` works like an array's: the proxy is the collection from here on.
     const self = new Proxy(this, TrackedCollectionBase._indexAccess<T>());
-    self._validate();
     self.tracker._trackCollection(self);
+    // Part of a model being built: validated once the model is (see construct() / new()).
+    if (!self.tracker._isConstructing) self._validate();
     return self;
   }
 

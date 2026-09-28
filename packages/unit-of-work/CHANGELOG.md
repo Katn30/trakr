@@ -1,5 +1,16 @@
 # @katn30/chronicle-unit-of-work
 
+## 1.0.2
+
+### Patch Changes
+
+- Validators no longer run on a half-built model: what `construct()` / `new()` create (objects and collections) is validated once the outermost construction ends. A validator can now read any part of the model its constructor builds, e.g. two collections whose validators read each other, and it records that dependency, so a change to either collection revalidates the other. Before, a collection validated itself in its own constructor: a validator reading a collection created after it saw nothing, recorded no dependency, and was not revalidated when that collection changed.
+
+  Behaviour change: inside a nested construction, what it built is not validated yet; it is validated when the outermost construction ends.
+
+- Updated dependencies
+  - @katn30/chronicle-core@1.0.2
+
 ## 1.0.1
 
 ### Patch Changes

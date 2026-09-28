@@ -63,6 +63,9 @@ export abstract class Tracker<
   private _pendingRevalidations: Array<{ obj: ITracked; prop: string | undefined }> = [];
   // What construct()/new() wrote while suppressed: revalidated once the outermost construction ends.
   private readonly _constructionWrites = new Map<ITracked, Set<string | undefined>>();
+  // What construct()/new() created: validated once the outermost construction ends.
+  private readonly _constructedObjects: TModel[] = [];
+  private readonly _constructedCollections: TCollection[] = [];
 
   /** @internal Every model object this tracker knows, in creation order. */
   public readonly _trackedObjects: TModel[] = [];
@@ -308,6 +311,7 @@ export abstract class Tracker<
   /** @internal */
   public _trackObject(trackedObject: TModel): void {
     this._trackedObjects.push(trackedObject);
+    if (this._isConstructing) this._constructedObjects.push(trackedObject);
     // It counts towards isValid while tracked, unless it is out of the model (released).
     if (!trackedObject._isOwnValid && !trackedObject._isValidityReleased) this._onValidityChanged(true);
   }
@@ -323,6 +327,7 @@ export abstract class Tracker<
   /** @internal */
   public _trackCollection(trackedCollection: TCollection): void {
     this._trackedCollections.push(trackedCollection);
+    if (this._isConstructing) this._constructedCollections.push(trackedCollection);
   }
 
   /** @internal */
@@ -348,20 +353,16 @@ export abstract class Tracker<
    * inside `action` is recorded, and the objects start clean and validated.
    */
   public construct<T>(action: () => T): T {
-    const objectsBefore = this._trackedObjects.length;
     this._constructionDepth++;
     this._suppressTrackingCounter++;
     try {
       const result = action();
-      for (let i = objectsBefore; i < this._trackedObjects.length; i++) {
-        validate(this._trackedObjects[i]);
-      }
-      if (this._constructionDepth === 1) this._revalidateConstructionWrites();
+      if (this._constructionDepth === 1) this._validateConstructed();
       return result;
     } finally {
       this._suppressTrackingCounter--;
       this._constructionDepth--;
-      if (this._constructionDepth === 0) this._constructionWrites.clear();
+      if (this._constructionDepth === 0) this._forgetConstructed();
       this.isValid = this._invalidCount === 0;
     }
   }
@@ -375,11 +376,28 @@ export abstract class Tracker<
     properties.add(property);
   }
 
-  /** Validators that depend on what the construction wrote (e.g. a collection's items) see the final state. */
-  private _revalidateConstructionWrites(): void {
+  /**
+   * The outermost construction ended, so the model is complete: the validators
+   * of what it created run now (never on a half-built model), recording what
+   * they read, and so do those that depend on what it wrote.
+   */
+  private _validateConstructed(): void {
+    const objects = this._constructedObjects.splice(0);
+    const collections = this._constructedCollections.splice(0);
+    const trackedObjects = new Set(this._trackedObjects);
+    const trackedCollections = new Set(this._trackedCollections);
+    for (const obj of objects) if (trackedObjects.has(obj)) validate(obj);
+    for (const col of collections) if (trackedCollections.has(col)) col._validate();
     for (const [target, properties] of this._constructionWrites) {
       for (const property of properties) this.revalidateTargeted(target, property);
     }
+    this._constructionWrites.clear();
+  }
+
+  // A construction that threw leaves nothing to validate.
+  private _forgetConstructed(): void {
+    this._constructedObjects.length = 0;
+    this._constructedCollections.length = 0;
     this._constructionWrites.clear();
   }
 
@@ -394,8 +412,10 @@ export abstract class Tracker<
     const savedRedo = [...this._redoOperations];
     this._constructionDepth++;
     let result: T;
+    let completed = false;
     try {
       result = action();
+      completed = true;
     } finally {
       // The constructor's writes ran as operations (so hooks cascade): they are
       // construction, not edits. Drop them and restore the redo stack.
@@ -403,11 +423,13 @@ export abstract class Tracker<
       this._redoOperations.length = 0;
       for (const op of savedRedo) this._redoOperations.push(op);
       this._constructionDepth--;
-      // Nested in another construction: that one revalidates when it ends.
-      if (this._constructionDepth === 0) this._revalidateConstructionWrites();
+      // Nested in another construction: that one validates when it ends.
+      if (this._constructionDepth === 0) {
+        if (completed) this._validateConstructed();
+        else this._forgetConstructed();
+      }
     }
     const created = this._trackedObjects.slice(objectsBefore);
-    for (const obj of created) validate(obj);
     this.isValid = this._invalidCount === 0;
     this._onNewCompleted(created);
     this.reset();
@@ -492,10 +514,12 @@ export abstract class Tracker<
       this._currentOperationPropertyName = undefined;
       const pending = this._pendingRevalidations;
       this._pendingRevalidations = [];
+      pending.push({ obj: properties.trackedObject, prop: properties.property });
       for (const { obj, prop } of pending) {
-        this.revalidateTargeted(obj, prop);
+        // Inside tracker.new(): the model is not complete yet, it is validated when the construction ends.
+        if (this._isConstructing) this._noteConstructionWrite(obj, prop);
+        else this.revalidateTargeted(obj, prop);
       }
-      this.revalidateTargeted(properties.trackedObject, properties.property);
       this._onOperationEnd(finished);
       this.reset();
       // Inside tracker.new() the operation is discarded: it is construction, not a change.

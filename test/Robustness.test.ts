@@ -502,11 +502,11 @@ describe("validators see what a construction built", () => {
     expect(basket.items.error).toBeUndefined();
   });
 
-  it("nested constructions revalidate once, when the outermost one ends", () => {
+  it("nested constructions validate once, when the outermost one ends", () => {
     const tracker = new UnitOfWork();
     const basket = tracker.construct(() => {
       const b = tracker.construct(() => new Basket(tracker));
-      expect(b.items.error).toBe("empty");       // still being built
+      expect(b.items.error).toBeUndefined();     // still being built: not validated yet
       b.items.push("pear");
       return b;
     });

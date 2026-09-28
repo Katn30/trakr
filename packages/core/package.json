@@ -1,6 +1,6 @@
 {
   "name": "@katn30/chronicle-core",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Shared core of @katn30/chronicle-unit-of-work and @katn30/chronicle-event-log: change tracking, undo/redo, sessions and validation for TypeScript models.",
   "type": "module",
   "main": "./dist/prod/index.cjs",
