@@ -157,7 +157,7 @@ export class UnitOfWork extends Tracker<Entity, TrackedCollectionBase<unknown>, 
     });
     this._undoOperations.push(...later);
     this.reset();
-    this._revalidate();
+    this._revalidateReplayed(later.flatMap((op) => op.actions));
   }
 
   /**
@@ -199,7 +199,7 @@ export class UnitOfWork extends Tracker<Entity, TrackedCollectionBase<unknown>, 
     }
 
     this.reset();
-    this._revalidate();
+    this._revalidateReplayed([...toUndo, ...toRedo].flatMap((op) => op.actions));
   }
 
   /**

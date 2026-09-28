@@ -66,16 +66,19 @@ const NUMBERS = [0, 1, 2, 3];
 
 // ============================================================================ UnitOfWork
 
+// Validators that read other objects and the collection: validity must stay current through every step.
 class UItem extends Entity {
   @AutoId id: number | null = null;
-  @Tracked() accessor v: number = 0;
+  @Tracked((_s, v: number) => (v === 3 ? "three" : undefined)) accessor v: number = 0;
   constructor(t: UnitOfWork, v = 0) { super(t); this.v = v; }
 }
 
 class UDoc extends EntityContainer {
   @AutoId id: number | null = null;
-  @Tracked() accessor title: string = "";
-  readonly items = new TrackedCollection<UItem>(this.tracker, []);
+  @Tracked((self: UDoc, t: string) => (t === "a" && self.items !== undefined && self.items.length > 2 ? "a: at most 2" : undefined))
+  accessor title: string = "";
+  readonly items = new TrackedCollection<UItem>(this.tracker, [], (items) =>
+    (this.title === "c" && items.some((i) => i.v === 2) ? "c: no 2" : undefined));
   constructor(t: UnitOfWork) { super(t); this.trackChild(this.items); }
 }
 
@@ -187,6 +190,23 @@ async function uowCommit(w: UWorld, r: Rng, log: string[]): Promise<void> {
   expectSame(w.server.view(), w.view(), w.tracker.isDirty, log, "after a save");
 }
 
+/** Validity as chronicle reports it: the tracker's, each object's own, each collection's error. */
+function validity(tracker: UnitOfWork | EventLog): string {
+  return JSON.stringify([
+    tracker.isValid,
+    tracker._trackedObjects.map((o) => o._isOwnValid),
+    tracker._trackedCollections.map((c) => c.error ?? null),
+  ]);
+}
+
+/** What chronicle reports must be what running every validator again gives. */
+function expectValidityCurrent(tracker: UnitOfWork | EventLog, log: string[]): void {
+  const reported = validity(tracker);
+  tracker._revalidate();
+  const full = validity(tracker);
+  if (reported !== full) throw new Error(`stale validity: ${reported}\n  expected ${full}\n  steps:\n    ${log.join("\n    ")}`);
+}
+
 function expectSame(server: string, local: string, dirty: boolean, log: string[], when: string) {
   if (server !== local || dirty) {
     throw new Error(`${when}: server ${server}\n  model  ${local}\n  isDirty ${dirty}\n  steps:\n    ${log.join("\n    ")}`);
@@ -204,6 +224,7 @@ async function runUow(seed: number, length: number): Promise<void> {
     else { uowSteps[name](w, r); log.push(name); }
     if (w.server.errors.length) throw new Error(`server rejected: ${w.server.errors.join(", ")}\n  steps:\n    ${log.join("\n    ")}`);
     if (!w.tracker.isDirty && !w.tracker.isSaving) expectSame(w.server.view(), w.view(), false, log, "not dirty");
+    expectValidityCurrent(w.tracker, log);
   }
   await w.tracker.commit((b) => w.server.save(b));
   log.push("final commit");
@@ -218,6 +239,7 @@ async function runUowSequence(names: string[]): Promise<void> {
     if (name === "commit") { await w.tracker.commit((b) => w.server.save(b)); expectSame(w.server.view(), w.view(), w.tracker.isDirty, log, "after a save"); }
     else uowSteps[name](w, r);
     if (!w.tracker.isDirty) expectSame(w.server.view(), w.view(), false, log, "not dirty");
+    expectValidityCurrent(w.tracker, log);
   }
   await w.tracker.commit((b) => w.server.save(b));
   expectSame(w.server.view(), w.view(), w.tracker.isDirty, log, "at the end");
@@ -227,7 +249,7 @@ async function runUowSequence(names: string[]): Promise<void> {
 
 class ECard extends TrackedObject {
   @EAutoId id: number | null = null;
-  @EventTracked() accessor text: string = "";
+  @EventTracked((_s, t: string) => (t === "c" ? "no c" : undefined)) accessor text: string = "";
   constructor(t: EventLog, text = "") { super(t); this.text = text; }
 }
 
@@ -238,10 +260,12 @@ class EMeta extends TrackedObject {
 
 class EBoard extends TrackedContainer {
   @Id id = "b";
-  @EventTracked() accessor title: string = "";
+  @EventTracked((self: EBoard, t: string) => (t === "a" && self.cards !== undefined && self.cards.length > 2 ? "a: at most 2" : undefined))
+  accessor title: string = "";
   @EventTracked(undefined, undefined, { history: true }) accessor log: string = "";
   readonly meta: EMeta;
-  readonly cards = new EventTrackedCollection<ECard>(this.tracker, "cards");
+  readonly cards = new EventTrackedCollection<ECard>(this.tracker, "cards", [], (cards) =>
+    (cards.some((c) => c.text === "a") && this.meta?.note === "a" ? "a with a" : cards.length === 0 && this.title === "b" ? "b: empty" : undefined));
   constructor(t: EventLog) {
     super(t);
     this.meta = t.construct(() => new EMeta(t));
@@ -399,6 +423,7 @@ async function runEvents(seed: number, length: number): Promise<void> {
     else { eventSteps[name](w, r); log.push(name); }
     if (w.server.errors.length) throw new Error(`server rejected: ${w.server.errors.join(", ")}\n  steps:\n    ${log.join("\n    ")}`);
     if (!w.tracker.isDirty && !w.tracker.isSaving) expectSame(w.server.view(), w.view(), false, log, "not dirty");
+    expectValidityCurrent(w.tracker, log);
   }
   await w.tracker.commit((b) => w.server.save(b));
   log.push("final commit");
@@ -414,6 +439,7 @@ async function runEventSequence(names: string[], mode: CommitMode): Promise<void
     else eventSteps[name](w, r);
     if (w.server.errors.length) throw new Error(`server rejected: ${w.server.errors.join(", ")}\n  steps:\n    ${log.join("\n    ")}`);
     if (!w.tracker.isDirty) expectSame(w.server.view(), w.view(), false, log, "not dirty");
+    expectValidityCurrent(w.tracker, log);
   }
   await w.tracker.commit((b) => w.server.save(b), { mode });
   expectSame(w.server.view(), w.view(), w.tracker.isDirty, log, "at the end");

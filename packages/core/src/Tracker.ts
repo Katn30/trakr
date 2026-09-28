@@ -1,5 +1,6 @@
 import { TypedEvent } from "./TypedEvent";
 import { Operation } from "./Operation";
+import type { Change } from "./Change";
 import type { TrackedCollectionBase } from "./TrackedCollection";
 import { OperationProperties } from "./OperationProperties";
 import { PropertyType } from "./PropertyType";
@@ -522,7 +523,7 @@ export abstract class Tracker<
     this._pendingRevalidations = [];
     this._onOperationAborted(op);
     this.reset();
-    this._revalidate();
+    this._revalidateReplayed(recorded);
   }
 
   private revalidateTargeted(changedObj: ITracked, changedProp: string | undefined): void {
@@ -742,7 +743,7 @@ export abstract class Tracker<
     this._onSessionRolledBack(toRevert);
 
     this.reset();
-    this._revalidate();
+    this._revalidateReplayed(toRevert.flatMap((op) => op.actions));
     if (toRevert.length > 0) {
       this._bumpVersion(-toRevert.length);
     }
@@ -760,7 +761,7 @@ export abstract class Tracker<
     this._onReplayed(undoOperation);
 
     this.reset();
-    this._revalidate();
+    this._revalidateReplayed(undoOperation.actions);
     this._bumpVersion(-1);
   }
 
@@ -776,8 +777,28 @@ export abstract class Tracker<
     this._onReplayed(redoOperation);
 
     this.reset();
-    this._revalidate();
+    this._revalidateReplayed(redoOperation.actions);
     this._bumpVersion(1);
+  }
+
+  /**
+   * After a replay (undo, redo, discard, rollback): the validators that depend
+   * on what the replayed actions changed run again, as the writes themselves
+   * would have made them — for objects in the model or not.
+   */
+  protected _revalidateReplayed(actions: readonly Change[]): void {
+    const done = new Map<ITracked, Set<string | undefined>>();
+    for (const { properties } of actions) {
+      let props = done.get(properties.trackedObject);
+      if (!props) {
+        props = new Set();
+        done.set(properties.trackedObject, props);
+      }
+      if (props.has(properties.property)) continue;
+      props.add(properties.property);
+      this.revalidateTargeted(properties.trackedObject, properties.property);
+    }
+    this.isValid = this._invalidCount === 0;
   }
 
   /** @internal Re-runs every validator. */

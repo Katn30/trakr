@@ -1,6 +1,6 @@
 {
   "name": "@katn30/chronicle-unit-of-work",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Unit of Work for TypeScript models: tracks new, changed and deleted objects, with undo/redo and validation, and commits them in one save.",
   "type": "module",
   "main": "./dist/prod/index.cjs",
@@ -47,9 +47,9 @@
     "dev": "tsup --watch"
   },
   "peerDependencies": {
-    "@katn30/chronicle-core": "^1.0.0"
+    "@katn30/chronicle-core": "^1.0.1"
   },
   "devDependencies": {
-    "@katn30/chronicle-core": "1.0.0"
+    "@katn30/chronicle-core": "1.0.1"
   }
 }

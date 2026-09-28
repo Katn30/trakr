@@ -155,10 +155,8 @@ describe("@Tracked on a setter", () => {
     const tracker = new UnitOfWork();
     const m = tracker.construct(() => new SetterModel(tracker));
     m.code = "";
-    // Setter validators read through the user's getter, which is not dependency-
-    // tracked, so they run on _revalidate()/undo/redo rather than on every write.
-    tracker._revalidate();
     expect(m.validationMessages.get("code")).toBe("code required");
+    expect(tracker.isValid).toBe(false);
     expect(setterCalls).toEqual(["before:", "after:"]);
     tracker.undo();
     expect(m.code).toBe("ok");

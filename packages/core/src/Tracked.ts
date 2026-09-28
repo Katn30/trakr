@@ -118,7 +118,11 @@ export function trackedImplementation<TSelf extends TrackedObjectBase, TValue>(
     assertSetter(target, context);
     if (validator) {
       context.addInitializer(function (this: T) {
-        registerPropertyValidator(Object.getPrototypeOf(this), propertyName, (model: T) => validator(model, readSetterProperty<V>(model, propertyName)));
+        registerPropertyValidator(Object.getPrototypeOf(this), propertyName, (model: T) => {
+          // The value is read through the class's own getter, which is not tracked: depend on the property explicitly.
+          DependencyTracker.record(model, propertyName);
+          return validator(model, readSetterProperty<V>(model, propertyName));
+        });
       });
     }
     return function (this: T, newValue: V): void {
